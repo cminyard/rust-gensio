@@ -73,10 +73,10 @@ pub trait OpDoneErr {
     /// Report an error on th eoperation.  Unlike most other gensio
     /// interfaces, which pass the error in the done() method, the
     /// error report is done separately here.
-    fn done_err(&self, err: i32);
+    fn done_err(&self, err: i32); // FIXME = make this &mut
 
     /// Report that the operation (open) has completed.
-    fn done(&self);
+    fn done(&self); // FIXME = make this &mut
 }
 
 struct OpDoneErrData {
@@ -98,7 +98,7 @@ extern "C" fn op_done_err(_io: *const raw::gensio, err: ffi::c_int,
 /// Close callbacks will need to implement this trait.
 pub trait OpDone {
     /// Report that the operation (close) has completed.
-    fn done(&self);
+    fn done(&self); // FIXME = make this &mut
 }
 
 struct OpDoneData {
@@ -118,12 +118,12 @@ pub trait GensioEvent {
     /// Report a read error.  Unlike most other gensio interfaces,
     /// which combine the error with the read() method, the error
     /// report is done separately here.
-    fn err(&self, err: i32) -> i32;
+    fn err(&self, err: i32) -> i32; // FIXME = make this &mut
 
     /// Report some received data.  The i32 return (first value in
     /// tuble) return is the error return, normally 0, and the u64
     /// (second value) is the number of bytes consumed.
-    fn read(&self, buf: &[u8], auxdata: Option<Vec<String>>) -> (i32, u64);
+    fn read(&self, buf: &[u8], auxdata: Option<Vec<String>>) -> (i32, u64); // FIXME = make this &mut
 }
 
 /// A gensio

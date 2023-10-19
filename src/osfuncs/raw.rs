@@ -156,7 +156,7 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_service(o: *const gensio_os_funcs,
-				   timeout: &gensio_time) -> ffi::c_int;
+				   timeout: *const gensio_time) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_alloc_waiter(o: *const gensio_os_funcs)
@@ -169,13 +169,13 @@ extern "C" {
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_wait(o: *const gensio_os_funcs,
 				w: *const gensio_waiter, count: ffi::c_uint,
-				timeout: &gensio_time) -> ffi::c_int;
+				timeout: *const gensio_time) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_wait_intr(o: *const gensio_os_funcs,
 				     w: *const gensio_waiter,
 				     count: ffi::c_uint,
-				     timeout: &gensio_time) -> ffi::c_int;
+				     timeout: *const gensio_time) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_wake(o: *const gensio_os_funcs,
