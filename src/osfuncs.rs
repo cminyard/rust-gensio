@@ -220,17 +220,7 @@ pub trait TimeoutHandler {
 /// Timer stop done callbacks will need to implement this trait.
 pub trait TimerStopDoneHandler {
     /// Report that the operation (close) has completed.
-    fn timer_stopped(&self); // FIXME = make this &mut
-}
-
-struct TimerStopData {
-    cb: Arc<dyn TimerStopDoneHandler>,
-    d: *mut TimerData
-}
-
-enum TimerStopDoneData {
-    Stop(TimerStopData),
-    Free(*mut TimerData)
+    fn timer_stopped(&mut self);
 }
 
 struct TimerData {
@@ -261,27 +251,41 @@ extern "C" fn timeout_handler(_t: *const raw::gensio_timer,
     unsafe { (*d).handler.timeout() };
 }
 
+struct TimerStopData<'a> {
+    cb: Arc<&'a mut dyn TimerStopDoneHandler>,
+    d: *mut TimerData
+}
+
 extern "C" fn timer_stopped_handler(_t: *const raw::gensio_timer,
 				    cb_data: *mut ffi::c_void) {
-    let d = cb_data as *mut TimerStopDoneData;
+    let d = cb_data as *mut TimerStopData;
     unsafe {
-	let d = Box::from_raw(d);
-	match *d {
-	    TimerStopDoneData::Stop(v) => {
-		{
-		    let _guard = (*v.d).m.lock().unwrap();
-		    (*v.d).stopping = false;
-		}
-		v.cb.timer_stopped();
-		let _guard = (*v.d).m.lock().unwrap();
-		if (*v.d).freed {
-		    raw::gensio_os_funcs_wake((*v.d).o.o, (*v.d).w);
-		}
-	    }
-	    TimerStopDoneData::Free(v) => {
-		raw::gensio_os_funcs_wake((*v).o.o, (*v).w);
-	    }
+	let d2 = (*d).d;
+	{
+	    let _guard = (*d2).m.lock().unwrap();
+	    (*d2).stopping = false;
 	}
+
+	// FIXME - This is a big hack
+	//let cb = Arc::get_mut_unchecked(&mut (*d).cb);
+	let cb = Arc::as_ptr(&mut (*d).cb);
+	let cb = cb as *mut &mut dyn TimerStopDoneHandler;
+	(*cb).timer_stopped();
+
+	let _guard = (*d2).m.lock().unwrap();
+	if (*d2).freed {
+	    raw::gensio_os_funcs_wake((*d2).o.o, (*d2).w);
+	}
+	drop(Box::from_raw(d));
+    }
+}
+
+extern "C" fn timer_freed_handler(_t: *const raw::gensio_timer,
+				  cb_data: *mut ffi::c_void) {
+    let d = cb_data as *mut TimerData;
+
+    unsafe {
+	raw::gensio_os_funcs_wake((*d).o.o, (*d).w);
     }
 }
 
@@ -311,7 +315,7 @@ impl Timer {
     }
 
     /// Stop a timer
-    pub fn stop_with_done(&self, cb: Arc<dyn TimerStopDoneHandler>)
+    pub fn stop_with_done<'a>(&self, cb: Arc<&'a mut dyn TimerStopDoneHandler>)
 			  -> Result<(), i32> {
 	unsafe {
 	    let _guard = (*self.d).m.lock().unwrap();
@@ -322,8 +326,7 @@ impl Timer {
 	    if (*self.d).stopping {
 		return Err(crate::GE_INUSE)
 	    }
-	    let d = Box::new(TimerStopDoneData::Stop(
-		TimerStopData { cb : cb, d: self.d }));
+	    let d = Box::new(TimerStopData { cb : cb, d: self.d });
 	    let d = Box::into_raw(d);
 	    let err = raw::gensio_os_funcs_stop_timer_with_done(
 		(*self.d).o.o, self.t,
@@ -356,13 +359,11 @@ impl Drop for Timer {
 	unsafe {
 	    let mut do_wait = false;
 	    {
-		let d = Box::new(TimerStopDoneData::Free(self.d));
-		let d = Box::into_raw(d);
 		let _guard = (*self.d).m.lock().unwrap();
-		
+
 		let err = raw::gensio_os_funcs_stop_timer_with_done
 		    ((*self.d).o.o, self.t,
-		     timer_stopped_handler, d as *mut ffi::c_void);
+		     timer_freed_handler, self.d as *mut ffi::c_void);
 		match err {
 		    crate::GE_TIMEDOUT => { // Timer is not running
 			if (*self.d).stopping {
@@ -430,6 +431,7 @@ mod tests {
 	}
     }
 
+    // Normal timer operation, wait for it to time out.
     #[test]
     #[serial]
     fn timer_test() {
@@ -446,5 +448,71 @@ mod tests {
 	    Ok(_) => (),
 	    Err(e) => assert!(e != 0)
 	}
+    }
+
+    // See that the cleanup happens on a running timer
+    #[test]
+    #[serial]
+    fn timer_test2() {
+	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.proc_setup().expect("Couldn't set up OsFuncs");
+	let h = Arc::new(HandleTimeout1 {
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	});
+	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
+
+	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
+    }
+
+    struct StopTimer1 {
+	w: Waiter,
+    }
+    impl TimerStopDoneHandler for StopTimer1 {
+	fn timer_stopped(&mut self) {
+	    self.w.wake().expect("Wake failed");
+	}
+    }
+
+    // Stop the timer and wait for it
+    #[test]
+    #[serial]
+    fn timer_test3() {
+	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.proc_setup().expect("Couldn't set up OsFuncs");
+	let h = Arc::new(HandleTimeout1 {
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	});
+	let mut s1 = StopTimer1 {
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	};
+	let s: Arc<&mut dyn TimerStopDoneHandler> = Arc::new(&mut s1);
+	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
+
+	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
+	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
+	match s1.w.wait(1, &Duration::new(1, 0)) {
+	    Ok(_) => (),
+	    Err(e) => assert!(e != 0)
+	}
+    }
+
+    // See that the cleanup works properly on a timer that is being
+    // stopped.
+    #[test]
+    #[serial]
+    fn timer_test4() {
+	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.proc_setup().expect("Couldn't set up OsFuncs");
+	let h = Arc::new(HandleTimeout1 {
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	});
+	let mut s1 = StopTimer1 {
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	};
+	let s: Arc<&mut dyn TimerStopDoneHandler> = Arc::new(&mut s1);
+	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
+
+	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
+	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
     }
 }
