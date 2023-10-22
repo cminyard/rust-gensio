@@ -63,7 +63,7 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<Arc<OsFuncs>, i32> {
 pub trait GensioLogHandler {
     /// Used to report internal logs from the system that couldn't be
     /// propagated back other ways.
-    fn log(&self, s: String); // FIXME = make this &mut
+    fn log(&self, s: String);
 }
 
 struct GensioLogHandlerData {
@@ -214,13 +214,13 @@ impl Drop for Waiter {
 /// Timer callbacks will need to implement this trait.
 pub trait TimeoutHandler {
     /// Report that the operation (close) has completed.
-    fn timeout(&self); // FIXME = make this &mut
+    fn timeout(&self);
 }
 
 /// Timer stop done callbacks will need to implement this trait.
 pub trait TimerStopDoneHandler {
     /// Report that the operation (close) has completed.
-    fn timer_stopped(&mut self);
+    fn timer_stopped(&self);
 }
 
 struct TimerData {
@@ -251,8 +251,8 @@ extern "C" fn timeout_handler(_t: *const raw::gensio_timer,
     unsafe { (*d).handler.timeout() };
 }
 
-struct TimerStopData<'a> {
-    cb: Arc<&'a mut dyn TimerStopDoneHandler>,
+struct TimerStopData {
+    cb: Arc<dyn TimerStopDoneHandler>,
     d: *mut TimerData
 }
 
@@ -266,11 +266,7 @@ extern "C" fn timer_stopped_handler(_t: *const raw::gensio_timer,
 	    (*d2).stopping = false;
 	}
 
-	// FIXME - This is a big hack
-	//let cb = Arc::get_mut_unchecked(&mut (*d).cb);
-	let cb = Arc::as_ptr(&mut (*d).cb);
-	let cb = cb as *mut &mut dyn TimerStopDoneHandler;
-	(*cb).timer_stopped();
+	(*d).cb.timer_stopped();
 
 	let _guard = (*d2).m.lock().unwrap();
 	if (*d2).freed {
@@ -315,7 +311,7 @@ impl Timer {
     }
 
     /// Stop a timer
-    pub fn stop_with_done<'a>(&self, cb: Arc<&'a mut dyn TimerStopDoneHandler>)
+    pub fn stop_with_done(&self, cb: Arc<dyn TimerStopDoneHandler>)
 			  -> Result<(), i32> {
 	unsafe {
 	    let _guard = (*self.d).m.lock().unwrap();
@@ -465,10 +461,18 @@ mod tests {
     }
 
     struct StopTimer1 {
-	w: Waiter,
+	w: Arc<Waiter>,
+        v: Arc<Mutex<u32>>,
     }
+
+    static TESTVAL: Mutex<u32> = Mutex::new(1);
+
     impl TimerStopDoneHandler for StopTimer1 {
-	fn timer_stopped(&mut self) {
+	fn timer_stopped(&self) {
+            let mut v = self.v.lock().unwrap();
+            let v2 = TESTVAL.lock().unwrap();
+            assert_eq!(*v, *v2);
+            *v = 10;
 	    self.w.wake().expect("Wake failed");
 	}
     }
@@ -482,18 +486,23 @@ mod tests {
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let mut s1 = StopTimer1 {
-	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	let s1 = StopTimer1 {
+	    w: Arc::new(o.new_waiter().expect("Couldn't allocate Waiter")),
+            v: Arc::new(Mutex::new(1)),
 	};
-	let s: Arc<&mut dyn TimerStopDoneHandler> = Arc::new(&mut s1);
+        let w = s1.w.clone();
+        let v = s1.v.clone();
+	let s: Arc<dyn TimerStopDoneHandler> = Arc::new(s1);
 	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
 
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
 	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
-	match s1.w.wait(1, &Duration::new(1, 0)) {
+	match w.wait(1, &Duration::new(1, 0)) {
 	    Ok(_) => (),
 	    Err(e) => assert!(e != 0)
 	}
+        let vv = v.lock().unwrap();
+        assert_eq!(*vv, 10);
     }
 
     // See that the cleanup works properly on a timer that is being
@@ -506,11 +515,16 @@ mod tests {
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let mut s1 = StopTimer1 {
-	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	let s1 = StopTimer1 {
+	    w: Arc::new(o.new_waiter().expect("Couldn't allocate Waiter")),
+            v: Arc::new(Mutex::new(2)),
 	};
-	let s: Arc<&mut dyn TimerStopDoneHandler> = Arc::new(&mut s1);
+	let s: Arc<dyn TimerStopDoneHandler> = Arc::new(s1);
 	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
+        {
+            let mut v2 = TESTVAL.lock().unwrap();
+            *v2 = 2;
+        }
 
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
 	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
