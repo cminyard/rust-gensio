@@ -461,11 +461,11 @@ mod tests {
     }
 
     struct StopTimer1 {
-	w: Arc<Waiter>,
-        v: Arc<Mutex<u32>>,
+	w: Waiter,
+        v: Mutex<u32>,
     }
 
-    static TESTVAL: Mutex<u32> = Mutex::new(1);
+    static TESTVAL: Mutex<u32> = Mutex::new(0);
 
     impl TimerStopDoneHandler for StopTimer1 {
 	fn timer_stopped(&self) {
@@ -487,21 +487,24 @@ mod tests {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
 	let s1 = StopTimer1 {
-	    w: Arc::new(o.new_waiter().expect("Couldn't allocate Waiter")),
-            v: Arc::new(Mutex::new(1)),
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+            v: Mutex::new(1),
 	};
-        let w = s1.w.clone();
-        let v = s1.v.clone();
-	let s: Arc<dyn TimerStopDoneHandler> = Arc::new(s1);
+	let s2 = Arc::new(s1);
+	let s: Arc<dyn TimerStopDoneHandler> = s2.clone();
 	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
 
+        {
+            let mut v2 = TESTVAL.lock().unwrap();
+            *v2 = 1;
+        }
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
 	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
-	match w.wait(1, &Duration::new(1, 0)) {
+	match s2.w.wait(1, &Duration::new(1, 0)) {
 	    Ok(_) => (),
 	    Err(e) => assert!(e != 0)
 	}
-        let vv = v.lock().unwrap();
+        let vv = s2.v.lock().unwrap();
         assert_eq!(*vv, 10);
     }
 
@@ -516,8 +519,8 @@ mod tests {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
 	let s1 = StopTimer1 {
-	    w: Arc::new(o.new_waiter().expect("Couldn't allocate Waiter")),
-            v: Arc::new(Mutex::new(2)),
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+            v: Mutex::new(2),
 	};
 	let s: Arc<dyn TimerStopDoneHandler> = Arc::new(s1);
 	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
