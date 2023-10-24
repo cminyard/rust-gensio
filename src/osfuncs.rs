@@ -32,6 +32,7 @@ pub struct OsFuncs {
     o: Arc<IOsFuncs>,
     proc_data: *const raw::gensio_os_proc_data,
     term_handler: Arc<GensioTermHandlerData>,
+    hup_handler: Arc<GensioHupHandlerData>,
 }
 
 /// Allocate an OsFuncs structure.  This takes a log handler for
@@ -55,7 +56,9 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<Arc<OsFuncs>, i32> {
 		    OsFuncs { o: Arc::new(IOsFuncs {log_data: d, o: o}),
 			      proc_data: std::ptr::null(),
                               term_handler: Arc::new(GensioTermHandlerData
-                                                     {cb: Mutex::new(None)})});
+                                                     {cb: Mutex::new(None)}),
+                              hup_handler: Arc::new(GensioHupHandlerData
+                                                    {cb: Mutex::new(None)})});
 	    Ok(rv)
 	}
 	_ => Err(err)
@@ -99,6 +102,23 @@ extern "C" fn term_handler(data: *mut ffi::c_void) {
     }
 }
 
+/// Used to report a hangup signal, Unix
+pub trait GensioHupHandler {
+    fn hup_sig(&self);
+}
+
+struct GensioHupHandlerData {
+    cb: Mutex<Option<Arc<dyn GensioHupHandler>>>
+}
+
+extern "C" fn hup_handler(data: *mut ffi::c_void) {
+    let d = data as *mut GensioHupHandlerData;
+    match *unsafe {(*d).cb.lock().unwrap() } {
+        None => (),
+        Some(ref cb) => cb.hup_sig()
+    }
+}
+
 impl OsFuncs {
     /// Called to setup the task (signals, shutdown handling, etc.)
     /// for a process.  This should be called on the first OsFuncs
@@ -135,6 +155,28 @@ impl OsFuncs {
                 self.proc_data,
                 term_handler,
                 Arc::as_ptr(&self.term_handler) as *mut ffi::c_void);
+        }
+        Ok(())
+    }
+
+    pub fn register_hup_handler(&self, handler: Arc<dyn GensioHupHandler>)
+                                 -> Result<(), i32> {
+        if self.proc_data == std::ptr::null() {
+            return Err(crate::GE_NOTREADY);
+        }
+        
+        let mut d = self.hup_handler.cb.lock().unwrap();
+        match *d {
+            None => (),
+            Some(_) => return Err(crate::GE_INUSE)
+        }
+
+        *d = Some(handler.clone());
+        unsafe {
+            raw::gensio_os_proc_register_reload_handler(
+                self.proc_data,
+                hup_handler,
+                Arc::as_ptr(&self.hup_handler) as *mut ffi::c_void);
         }
         Ok(())
     }
@@ -599,6 +641,32 @@ mod tests {
 	});
         o.register_term_handler(h.clone()).expect("Couldn't register term handler");
         unsafe { kill(getpid(), 15); }
+	match h.w.wait(1, &Duration::new(1, 0)) {
+	    Ok(_) => (),
+	    Err(e) => assert!(e == 0)
+	}
+    }
+
+    struct HupHnd {
+        w: Waiter,
+    }
+
+    impl GensioHupHandler for HupHnd {
+        fn hup_sig(&self) {
+            self.w.wake().expect("Wake failed");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn hup_test() {
+	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.proc_setup().expect("Couldn't set up OsFuncs");
+	let h = Arc::new(HupHnd {
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	});
+        o.register_hup_handler(h.clone()).expect("Couldn't register hup handler");
+        unsafe { kill(getpid(), 1); }
 	match h.w.wait(1, &Duration::new(1, 0)) {
 	    Ok(_) => (),
 	    Err(e) => assert!(e == 0)
