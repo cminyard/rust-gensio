@@ -6,7 +6,10 @@
 
 #include <stdio.h>
 #include <assert.h>
+#include <signal.h>
+#include <unistd.h>
 #include <gensio/gensio_os_funcs_public.h>
+#include <gensio/gensio_os_funcs.h>
 #include <gensio/gensio_utils.h>
 
 typedef void (*gensio_rust_log_func)(const char *log, void *data);
@@ -71,4 +74,32 @@ gensio_rust_cleanup(struct gensio_os_funcs *o)
 
     if (d)
 	gensio_os_funcs_zfree(o, d);
+}
+
+struct gensio_iod *
+gensio_add_iod(struct gensio_os_funcs *o, int type, int fd)
+{
+    struct gensio_iod *iod;
+    int err = o->add_iod(o, type, fd, &iod);
+    if (err)
+	return NULL;
+    return iod;
+}
+
+void
+gensio_release_iod(struct gensio_os_funcs *o, struct gensio_iod *iod)
+{
+    o->release_iod(iod);
+}
+
+int
+send_hup_self(void)
+{
+    return kill(getpid(), SIGHUP);
+}
+
+int
+send_term_self(void)
+{
+    return kill(getpid(), SIGTERM);
 }

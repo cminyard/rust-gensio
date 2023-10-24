@@ -33,6 +33,7 @@ pub struct OsFuncs {
     proc_data: *const raw::gensio_os_proc_data,
     term_handler: Arc<GensioTermHandlerData>,
     hup_handler: Arc<GensioHupHandlerData>,
+    winsize_handler: Arc<GensioWinsizeHandlerData>,
 }
 
 /// Allocate an OsFuncs structure.  This takes a log handler for
@@ -57,6 +58,8 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<Arc<OsFuncs>, i32> {
 			      proc_data: std::ptr::null(),
                               term_handler: Arc::new(GensioTermHandlerData
                                                      {cb: Mutex::new(None)}),
+                              winsize_handler: Arc::new(GensioWinsizeHandlerData
+                                                        {cb: Mutex::new(None)}),
                               hup_handler: Arc::new(GensioHupHandlerData
                                                     {cb: Mutex::new(None)})});
 	    Ok(rv)
@@ -119,6 +122,24 @@ extern "C" fn hup_handler(data: *mut ffi::c_void) {
     }
 }
 
+/// Used to report a window size signal, Unix and Windows
+pub trait GensioWinsizeHandler {
+    fn winsize_sig(&self, x_chrs: i32, y_chrs: i32, x_bits: i32, y_bits: i32);
+}
+
+struct GensioWinsizeHandlerData {
+    cb: Mutex<Option<Arc<dyn GensioWinsizeHandler>>>
+}
+
+extern "C" fn winsize_handler(x_chrs: i32, y_chrs: i32, x_bits: i32, y_bits: i32,
+                              data: *mut ffi::c_void) {
+    let d = data as *mut GensioWinsizeHandlerData;
+    match *unsafe {(*d).cb.lock().unwrap() } {
+        None => (),
+        Some(ref cb) => cb.winsize_sig(x_chrs, y_chrs, x_bits, y_bits)
+    }
+}
+
 impl OsFuncs {
     /// Called to setup the task (signals, shutdown handling, etc.)
     /// for a process.  This should be called on the first OsFuncs
@@ -150,13 +171,17 @@ impl OsFuncs {
         }
 
         *d = Some(handler.clone());
+        let err;
         unsafe {
-            raw::gensio_os_proc_register_term_handler(
+            err = raw::gensio_os_proc_register_term_handler(
                 self.proc_data,
                 term_handler,
                 Arc::as_ptr(&self.term_handler) as *mut ffi::c_void);
         }
-        Ok(())
+        match err {
+            0 => Ok(()),
+            _ => Err(err)
+        }
     }
 
     pub fn register_hup_handler(&self, handler: Arc<dyn GensioHupHandler>)
@@ -172,13 +197,45 @@ impl OsFuncs {
         }
 
         *d = Some(handler.clone());
+        let err;
         unsafe {
-            raw::gensio_os_proc_register_reload_handler(
+            err = raw::gensio_os_proc_register_reload_handler(
                 self.proc_data,
                 hup_handler,
                 Arc::as_ptr(&self.hup_handler) as *mut ffi::c_void);
         }
-        Ok(())
+        match err {
+            0 => Ok(()),
+            _ => Err(err)
+        }
+    }
+
+    pub fn register_winsize_handler(&self, console_iod: *const raw::gensio_iod,
+                                    handler: Arc<dyn GensioWinsizeHandler>)
+                                    -> Result<(), i32> {
+        if self.proc_data == std::ptr::null() {
+            return Err(crate::GE_NOTREADY);
+        }
+
+        let mut d = self.winsize_handler.cb.lock().unwrap();
+        match *d {
+            None => (),
+            Some(_) => return Err(crate::GE_INUSE)
+        }
+
+        *d = Some(handler.clone());
+        let err;
+        unsafe {
+            err = raw::gensio_os_proc_register_winsize_handler(
+                self.proc_data,
+                console_iod,
+                winsize_handler,
+                Arc::as_ptr(&self.winsize_handler) as *mut ffi::c_void);
+        }
+        match err {
+            0 => Ok(()),
+            _ => Err(err)
+        }
     }
 
     /// Allocate a new Waiter object for the OsFuncs.
@@ -628,8 +685,8 @@ mod tests {
     }
 
     extern "C" {
-        fn kill(pid: ffi::c_int, sig: ffi::c_int);
-        fn getpid() -> ffi::c_int;
+        fn send_term_self() -> ffi::c_int;
+        fn send_hup_self() -> ffi::c_int;
     }
     #[test]
     #[serial]
@@ -640,11 +697,25 @@ mod tests {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
         o.register_term_handler(h.clone()).expect("Couldn't register term handler");
-        unsafe { kill(getpid(), 15); }
-	match h.w.wait(1, &Duration::new(1, 0)) {
-	    Ok(_) => (),
-	    Err(e) => assert!(e == 0)
-	}
+        unsafe { send_term_self(); }
+        // There are other threads running in the process, if those
+        // threads handle the signal, it won't necessarily wake up the
+        // waiter.  So we loop twice to catch the signal setting the
+        // second time around.  Same with the other signal handler
+        // functions.
+        let mut count = 0;
+        loop {
+	    let rv = h.w.wait(1, &Duration::new(1, 0));
+            if rv == Err(crate::GE_TIMEDOUT) && count == 0 {
+                count += 1;
+                continue;
+            }
+            match rv {
+	        Ok(_) => (),
+	        Err(e) => assert!(e == 0)
+            }
+            break;
+	};
     }
 
     struct HupHnd {
@@ -666,10 +737,70 @@ mod tests {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
         o.register_hup_handler(h.clone()).expect("Couldn't register hup handler");
-        unsafe { kill(getpid(), 1); }
-	match h.w.wait(1, &Duration::new(1, 0)) {
-	    Ok(_) => (),
-	    Err(e) => assert!(e == 0)
-	}
+        unsafe { send_hup_self(); }
+
+        // See note in term_test on this loop.
+        let mut count = 0;
+        loop {
+	    let rv = h.w.wait(1, &Duration::new(1, 0));
+            if rv == Err(crate::GE_TIMEDOUT) && count == 0 {
+                count += 1;
+                continue;
+            }
+            match rv {
+	        Ok(_) => (),
+	        Err(e) => assert!(e == 0)
+            }
+            break;
+	};
+    }
+
+    struct WinsizeHnd {
+        w: Waiter,
+    }
+
+    impl GensioWinsizeHandler for WinsizeHnd {
+        fn winsize_sig(&self, _x_chrs: i32, _y_chrs: i32, _x_bits: i32, _y_bits: i32) {
+            self.w.wake().expect("Wake failed");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn winsize_test() {
+	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.proc_setup().expect("Couldn't set up OsFuncs");
+	let h = Arc::new(WinsizeHnd {
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	});
+        let iod;
+        let o2;
+        unsafe {
+            o2 = o.raw();
+            iod = raw::gensio_add_iod(o2.o, raw::GENSIO_IOD_CONSOLE, 0);
+            assert!(iod != std::ptr::null());
+            o.register_winsize_handler(iod, h.clone())
+                .expect("Couldn't register winsize handler");
+        }
+        // Note that the winsize handler will automatically send the
+        // proper signal to cause the callback, so no need to send it.
+
+        // See note in term_test on this loop.
+        let mut count = 0;
+        loop {
+	    let rv = h.w.wait(1, &Duration::new(1, 0));
+            if rv == Err(crate::GE_TIMEDOUT) && count == 0 {
+                count += 1;
+                continue;
+            }
+            match rv {
+	        Ok(_) => (),
+	        Err(e) => assert!(e == 0)
+            }
+            break;
+	};
+        unsafe {
+            raw::gensio_release_iod(o2.o, iod);
+        }
     }
 }

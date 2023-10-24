@@ -31,6 +31,9 @@ pub struct gensio_timer;
 #[repr(C)]
 pub struct gensio_runner;
 
+#[repr(C)]
+pub struct gensio_iod;
+
 #[allow(non_camel_case_types)]
 pub type gensio_timer_cb = extern "C" fn (t: *const gensio_timer,
 					  data: *mut ffi::c_void);
@@ -82,17 +85,18 @@ extern "C" {
     #[allow(improper_ctypes)]
     pub fn gensio_os_proc_register_term_handler(data: *const gensio_os_proc_data,
 					        cb: gensio_sig_cb,
-					        data: *mut ffi::c_void);
+					        data: *mut ffi::c_void) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_proc_register_reload_handler(data: *const gensio_os_proc_data,
 					          cb: gensio_sig_cb,
-					          data: *mut ffi::c_void);
+					          data: *mut ffi::c_void) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_proc_register_winsize_handler(data: *const gensio_os_proc_data,
+                                                   console_iod: *const gensio_iod,
 					           cb: gensio_winsize_cb,
-					           data: *mut ffi::c_void);
+					           data: *mut ffi::c_void) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_alloc_lock(o: *const gensio_os_funcs)
@@ -196,4 +200,23 @@ extern "C" {
     /// any data allocated.
     #[allow(improper_ctypes)]
     pub fn gensio_rust_cleanup(o: *const gensio_os_funcs);
+
+    /// Allocate an IOD.  This is for internal use and subject to change.
+    #[allow(improper_ctypes)]
+    pub fn gensio_add_iod(o: *const gensio_os_funcs, kind: ffi::c_int, fd: ffi::c_int)
+                          -> *const gensio_iod;
+
+    /// Release an allocated IOD.g
+    #[allow(improper_ctypes)]
+    pub fn gensio_release_iod(o: *const gensio_os_funcs, iod: *const gensio_iod);
 }
+
+pub const GESNIO_IOD_INVALID: i32       = 0;
+pub const GENSIO_IOD_SOCKET: i32        = 1;
+pub const GENSIO_IOD_PIPE: i32          = 2;
+pub const GENSIO_IOD_DEV: i32           = 3;
+pub const GENSIO_IOD_FILE: i32          = 4;
+pub const GENSIO_IOD_SIGNAL: i32        = 5;
+pub const GENSIO_IOD_STDIO: i32         = 6;
+pub const GENSIO_IOD_CONSOLE: i32       = 7;
+pub const GENSIO_IOD_PTY: i32           = 8;
