@@ -31,6 +31,7 @@ impl Drop for IOsFuncs {
 pub struct OsFuncs {
     o: Arc<IOsFuncs>,
     proc_data: *const raw::gensio_os_proc_data,
+    term_handler: Arc<GensioTermHandlerData>,
 }
 
 /// Allocate an OsFuncs structure.  This takes a log handler for
@@ -52,7 +53,9 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<Arc<OsFuncs>, i32> {
 	    }
 		let rv = Arc::new(
 		    OsFuncs { o: Arc::new(IOsFuncs {log_data: d, o: o}),
-			      proc_data: std::ptr::null()});
+			      proc_data: std::ptr::null(),
+                              term_handler: Arc::new(GensioTermHandlerData
+                                                     {cb: Mutex::new(None)})});
 	    Ok(rv)
 	}
 	_ => Err(err)
@@ -79,6 +82,23 @@ extern "C" fn log_handler(log: *const ffi::c_char,
     unsafe { (*d).cb.log(s); }
 }
 
+/// Used to report a termination signal, Windows or Unix
+pub trait GensioTermHandler {
+    fn term_sig(&self);
+}
+
+struct GensioTermHandlerData {
+    cb: Mutex<Option<Arc<dyn GensioTermHandler>>>
+}
+
+extern "C" fn term_handler(data: *mut ffi::c_void) {
+    let d = data as *mut GensioTermHandlerData;
+    match *unsafe {(*d).cb.lock().unwrap() } {
+        None => (),
+        Some(ref cb) => cb.term_sig()
+    }
+}
+
 impl OsFuncs {
     /// Called to setup the task (signals, shutdown handling, etc.)
     /// for a process.  This should be called on the first OsFuncs
@@ -95,6 +115,28 @@ impl OsFuncs {
 	    0 => Ok(()),
 	    _ => Err(err)
 	}
+    }
+
+    pub fn register_term_handler(&self, handler: Arc<dyn GensioTermHandler>)
+                                 -> Result<(), i32> {
+        if self.proc_data == std::ptr::null() {
+            return Err(crate::GE_NOTREADY);
+        }
+        
+        let mut d = self.term_handler.cb.lock().unwrap();
+        match *d {
+            None => (),
+            Some(_) => return Err(crate::GE_INUSE)
+        }
+
+        *d = Some(handler.clone());
+        unsafe {
+            raw::gensio_os_proc_register_term_handler(
+                self.proc_data,
+                term_handler,
+                Arc::as_ptr(&self.term_handler) as *mut ffi::c_void);
+        }
+        Ok(())
     }
 
     /// Allocate a new Waiter object for the OsFuncs.
@@ -531,5 +573,31 @@ mod tests {
 
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
 	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
+    }
+
+    struct TermHnd {
+        w: Waiter,
+    }
+
+    impl GensioTermHandler for TermHnd {
+        fn term_sig(&self) {
+            crate::printfit("***asdf");
+            self.w.wake().expect("Wake failed");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn term_test() {
+	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.proc_setup().expect("Couldn't set up OsFuncs");
+	let h = Arc::new(TermHnd {
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	});
+        o.register_term_handler(h.clone()).expect("Couldn't register term handler");
+	match h.w.wait(1, &Duration::new(1, 0)) {
+	    Ok(_) => (),
+	    Err(e) => assert!(e != 0)
+	}
     }
 }

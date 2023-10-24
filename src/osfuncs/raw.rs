@@ -80,19 +80,19 @@ extern "C" {
     pub fn gensio_os_proc_cleanup(data: *const gensio_os_proc_data);
 
     #[allow(improper_ctypes)]
-    pub fn gensio_os_register_term_handler(data: *const gensio_os_proc_data,
-					   cb: gensio_sig_cb,
-					   data: *mut ffi::c_void);
+    pub fn gensio_os_proc_register_term_handler(data: *const gensio_os_proc_data,
+					        cb: gensio_sig_cb,
+					        data: *mut ffi::c_void);
 
     #[allow(improper_ctypes)]
-    pub fn gensio_os_register_reload_handler(data: *const gensio_os_proc_data,
-					     cb: gensio_sig_cb,
-					     data: *mut ffi::c_void);
+    pub fn gensio_os_proc_register_reload_handler(data: *const gensio_os_proc_data,
+					          cb: gensio_sig_cb,
+					          data: *mut ffi::c_void);
 
     #[allow(improper_ctypes)]
-    pub fn gensio_os_register_winsize_handler(data: *const gensio_os_proc_data,
-					      cb: gensio_winsize_cb,
-					      data: *mut ffi::c_void);
+    pub fn gensio_os_proc_register_winsize_handler(data: *const gensio_os_proc_data,
+					           cb: gensio_winsize_cb,
+					           data: *mut ffi::c_void);
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_alloc_lock(o: *const gensio_os_funcs)
