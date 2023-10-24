@@ -187,8 +187,8 @@ impl OsFuncs {
 
 impl Drop for OsFuncs {
     fn drop(&mut self) {
-	unsafe {
-	    if self.proc_data != std::ptr::null() {
+        if self.proc_data != std::ptr::null() {
+            unsafe {
 		raw::gensio_os_proc_cleanup(self.proc_data);
 	    }
 	    // o will be freed by the Arc<>
@@ -484,7 +484,7 @@ mod tests {
 
 	match h.w.wait(1, &Duration::new(1, 0)) {
 	    Ok(_) => (),
-	    Err(e) => assert!(e != 0)
+	    Err(e) => assert!(e == 0)
 	}
     }
 
@@ -544,7 +544,7 @@ mod tests {
 	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
 	match s2.w.wait(1, &Duration::new(1, 0)) {
 	    Ok(_) => (),
-	    Err(e) => assert!(e != 0)
+	    Err(e) => assert!(e == 0)
 	}
         let vv = s2.v.lock().unwrap();
         assert_eq!(*vv, 10);
@@ -581,11 +581,14 @@ mod tests {
 
     impl GensioTermHandler for TermHnd {
         fn term_sig(&self) {
-            crate::printfit("***asdf");
             self.w.wake().expect("Wake failed");
         }
     }
 
+    extern "C" {
+        fn kill(pid: ffi::c_int, sig: ffi::c_int);
+        fn getpid() -> ffi::c_int;
+    }
     #[test]
     #[serial]
     fn term_test() {
@@ -595,9 +598,10 @@ mod tests {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
         o.register_term_handler(h.clone()).expect("Couldn't register term handler");
+        unsafe { kill(getpid(), 15); }
 	match h.w.wait(1, &Duration::new(1, 0)) {
 	    Ok(_) => (),
-	    Err(e) => assert!(e != 0)
+	    Err(e) => assert!(e == 0)
 	}
     }
 }
