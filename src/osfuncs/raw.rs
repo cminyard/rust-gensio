@@ -147,7 +147,8 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_alloc_runner(o: *const gensio_os_funcs,
-					cb: gensio_runner_cb)
+					cb: gensio_runner_cb,
+					data: *mut ffi::c_void)
 					-> *const gensio_runner;
 
     #[allow(improper_ctypes)]
@@ -156,7 +157,8 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_run(o: *const gensio_os_funcs,
-			       w: *const gensio_runner);
+			       w: *const gensio_runner)
+			       -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_service(o: *const gensio_os_funcs,

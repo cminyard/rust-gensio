@@ -277,6 +277,25 @@ impl OsFuncs {
 	Some(Timer { t: t, d: d })
     }
 
+    /// Allocate a new Runner object for the OsFuncs.
+    pub fn new_runner(&self, handler: Arc<dyn RunnerHandler>)
+		     -> Option<Runner> {
+	let d = Box::new(RunnerData { o: self.o.clone(),
+				      handler: handler });
+	let d = Box::into_raw(d);
+	let r;
+	unsafe {
+	    r = raw::gensio_os_funcs_alloc_runner(self.o.o, runner_handler,
+						  d as *mut ffi::c_void);
+	}
+
+	if r == std::ptr::null() {
+	    unsafe { drop(Box::from_raw(d)); }
+	    return None
+	}
+	Some(Runner { r: r, d: d })
+    }
+
     /// Get a reference to the os_funcs that we can keep and use.  For
     /// internal use only.
     pub fn raw(&self) -> Arc<IOsFuncs> {
@@ -354,13 +373,13 @@ impl Drop for Waiter {
 
 /// Timer callbacks will need to implement this trait.
 pub trait TimeoutHandler {
-    /// Report that the operation (close) has completed.
+    /// Report that the timeout has occurred.
     fn timeout(&self);
 }
 
 /// Timer stop done callbacks will need to implement this trait.
 pub trait TimerStopDoneHandler {
-    /// Report that the operation (close) has completed.
+    /// Report that the operation (timer stop) has completed.
     fn timer_stopped(&self);
 }
 
@@ -439,6 +458,9 @@ impl Timer {
 	    _ => Err(err)
 	}
     }
+
+    // FIXME - there is no absolute time.  It may not be necessary,
+    // but could be added.
 
     /// Stop a timer
     pub fn stop(&self) -> Result<(), i32> {
@@ -530,6 +552,50 @@ impl Drop for Timer {
 					  1, std::ptr::null());
 	    }
 	    raw::gensio_os_funcs_free_timer((*self.d).o.o, self.t);
+	    drop(Box::from_raw(self.d));
+	}
+    }
+}
+
+/// Runner callbacks will need to implement this trait.
+pub trait RunnerHandler {
+    /// Report that the operation (close) has completed.
+    fn runner(&self);
+}
+
+struct RunnerData {
+    o: Arc<IOsFuncs>,
+    handler: Arc<dyn RunnerHandler>,
+}
+
+pub struct Runner {
+    r: *const raw::gensio_runner,
+    d: *mut RunnerData
+}
+
+extern "C" fn runner_handler(_r: *const raw::gensio_runner,
+			     cb_data: *mut ffi::c_void) {
+    let d = cb_data as *mut RunnerData;
+    unsafe { (*d).handler.runner() };
+}
+
+impl Runner {
+    /// Start timer relative
+    pub fn run(&self) -> Result<(), i32> {
+	let err = unsafe {
+	    raw::gensio_os_funcs_run((*self.d).o.o, self.r)
+	};
+	match err {
+	    0 => Ok(()),
+	    _ => Err(err)
+	}
+    }
+}
+
+impl Drop for Runner {
+    fn drop(&mut self) {
+	unsafe {
+	    raw::gensio_os_funcs_free_runner((*self.d).o.o, self.r);
 	    drop(Box::from_raw(self.d));
 	}
     }
@@ -802,5 +868,32 @@ mod tests {
         unsafe {
             raw::gensio_release_iod(o2.o, iod);
         }
+    }
+
+    struct HandleRunner1 {
+	w: Waiter,
+    }
+    impl RunnerHandler for HandleRunner1 {
+	fn runner(&self) {
+	    self.w.wake().expect("Wake failed");
+	}
+    }
+
+    #[test]
+    #[serial]
+    fn runner_test() {
+	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.proc_setup().expect("Couldn't set up OsFuncs");
+	let h = Arc::new(HandleRunner1 {
+	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
+	});
+	let t = o.new_runner(h.clone()).expect("Couldn't allocate Timer");
+
+	t.run().expect("Couldn't start timer");
+
+	match h.w.wait(1, &Duration::new(1, 0)) {
+	    Ok(_) => (),
+	    Err(e) => assert!(e == 0)
+	}
     }
 }
