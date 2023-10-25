@@ -118,7 +118,7 @@ extern "C" fn op_done(_io: *const raw::gensio,
 /// The struct that gets callbacks from a gensio will need to
 /// implement this trait.
 pub trait Event {
-    /// A lot was reported dealing with the gensio.
+    /// A log was reported dealing with the gensio.
     fn log(&self, _s: String) {}
 
     /// Called when parameter parsing is incorrect in str_to_gensio().
@@ -425,11 +425,16 @@ pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
 	Ok(s) => s,
 	Err(_) => return Err(GE_INVAL)
     };
+    // Create a temporary data item so str_to_gensio can report parmerrs.
+    let dt = Box::new(Gensio { o: or.clone(), g: std::ptr::null(),
+			       cb: cb.clone(),
+			       myptr: std::ptr::null_mut() });
+    let dt = Box::into_raw(dt);
     let err = unsafe {
 	raw::str_to_gensio(s.as_ptr(), or.o, evhndl,
-			   std::ptr::null(), &g)
+			   dt as *mut ffi::c_void, &g)
     };
-    match err {
+    let rv = match err {
 	0 => {
 	    let d = Box::new(Gensio { o: or.clone(), g: g, cb: cb.clone(),
 				      myptr: std::ptr::null_mut() });
@@ -440,7 +445,9 @@ pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
 	    Ok(Gensio { o: or, g: g, cb: cb, myptr: d })
 	}
 	_ => Err(GE_INVAL)
-    }
+    };
+    let _dt = unsafe {Box::from_raw(dt) }; // Free our original box
+    rv
 }
 
 impl Gensio {
@@ -541,7 +548,7 @@ impl Drop for Gensio {
 /// The struct that gets callbacks from a gensio will need to
 /// implement this trait.
 pub trait AccepterEvent {
-    /// A lot was reported dealing with the gensio.
+    /// A log was reported dealing with the gensio.
     fn log(&self, _s: String) {}
 
     /// Called when parameter parsing is incorrect in str_to_gensio().
@@ -732,11 +739,17 @@ pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
 	Ok(s) => s,
 	Err(_) => return Err(GE_INVAL)
     };
+    // Create a temporary data item so str_to_gensio_accepter can
+    // report parmerrs.
+    let dt = Box::new(Accepter { o: or.clone(), a: std::ptr::null(),
+				 cb: cb.clone(),
+				 myptr: std::ptr::null_mut() });
+    let dt = Box::into_raw(dt);
     let err = unsafe {
 	raw::str_to_gensio_accepter(s.as_ptr(), or.o, acc_evhndl,
-				    std::ptr::null(), &a)
+				    dt as *mut ffi::c_void, &a)
     };
-    match err {
+    let rv = match err {
 	0 => {
 	    let d = Box::new(Accepter { o: or.clone(), a: a, cb: cb.clone(),
 					myptr: std::ptr::null_mut() });
@@ -747,7 +760,9 @@ pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
 	    Ok(Accepter { o: or, a: a, cb: cb, myptr: d })
 	}
 	_ => Err(GE_INVAL)
-    }
+    };
+    let _dt = unsafe {Box::from_raw(dt) }; // Free our original box
+    rv
 }
 
 /// Shutdown callbacks will need to implement this trait.
