@@ -126,12 +126,53 @@ pub trait GensioEvent {
     /// Report some received data.  The i32 return (first value in
     /// tuble) return is the error return, normally 0, and the u64
     /// (second value) is the number of bytes consumed.
-    fn read(&self, buf: &[u8], auxdata: Option<Vec<String>>) -> (i32, u64);
+    fn read(&self, buf: &[u8], auxdata: &Option<Vec<String>>) -> (i32, u64);
+
+    fn write_ready(&self) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn new_channel(&self, _g: Arc<Gensio>, _auxdata: &Option<Vec<String>>)
+		   -> i32 {
+	GE_NOTSUP
+    }
+
+    fn send_break(&self) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn auth_begin(&self) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn precert_verify(&self) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn postcert_verify(&self, _err: i32, _errstr: &Option<String>) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn password_verify(&self, _passwd: &String) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn request_password(&self, _maxsize: u64) -> (i32, Option<String>) {
+	(GE_NOTSUP, None)
+    }
+
+    fn verify_2fa(&self, _data: &[u8]) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn request_2fa(&self) -> (i32, Option<&[u8]>) {
+	(GE_NOTSUP, None)
+    }
 }
 
 /// A gensio
 pub struct Gensio {
-    _o: Arc<osfuncs::IOsFuncs>, // Used to keep the os funcs alive.
+    o: Arc<osfuncs::IOsFuncs>, // Used to keep the os funcs alive.
     g: *const raw::gensio,
     cb: Arc<dyn GensioEvent>,
 
@@ -197,20 +238,33 @@ fn auxfree(v: Option<Vec<*mut ffi::c_char>>) {
     }
 }
 
+struct DummyEvHndl {
+}
+
+impl GensioEvent for DummyEvHndl {
+    fn err(&self, _err: i32) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn read(&self, _buf: &[u8], _auxdata: &Option<Vec<String>>) -> (i32, u64) {
+	(GE_NOTSUP, 0)
+    }
+}
+
 extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
-		     event: ffi::c_int, err: ffi::c_int,
+		     event: ffi::c_int, ierr: ffi::c_int,
 		     buf: *const ffi::c_void, buflen: *mut GensioDS,
 		     auxdata: *const *const ffi::c_char) -> ffi::c_int
 {
     let g = user_data as *mut Gensio;
 
-    if err != 0 {
-	return unsafe {(*g).cb.err(err)};
-    }
-
     let err;
     match event {
 	raw::GENSIO_EVENT_READ => {
+	    if ierr != 0 {
+		return unsafe {(*g).cb.err(ierr)};
+	    }
+
 	    // Convert the buffer into a slice.  You can't use it directly as
 	    // a pointer to create a CString with from_raw() because then Rust
 	    // takes over ownership of the data, and will free it when this
@@ -220,8 +274,112 @@ extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    };
 	    let a = auxtovec(auxdata);
 	    let count;
-	    (err, count) = unsafe { (*g).cb.read(b, a) };
+	    (err, count) = unsafe { (*g).cb.read(b, &a) };
 	    unsafe { *buflen = count as GensioDS; }
+	}
+	raw::GENSIO_EVENT_WRITE_READY => {
+	    err = unsafe { (*g).cb.write_ready() };
+	}
+	raw::GENSIO_EVENT_NEW_CHANNEL => {
+	    let g2 = buf as *const raw::gensio;
+	    let cb = Arc::new(DummyEvHndl{ });
+	    let d = Box::new(Gensio { o: unsafe {(*g).o.clone() }, g: g2,
+				      cb: cb.clone(),
+				      myptr: std::ptr::null_mut() });
+	    let d = Box::into_raw(d);
+	    unsafe {
+		raw::gensio_set_callback((*d).g, evhndl, d as *mut ffi::c_void);
+	    }
+	    err = unsafe {
+		(*g).cb.new_channel(Arc::new(Gensio
+					     { o: (*g).o.clone(),
+					       g: g2, cb: cb, myptr: d }),
+				    &auxtovec(auxdata))
+	    };
+	}
+	raw::GENSIO_EVENT_SEND_BREAK => {
+	    err = unsafe { (*g).cb.send_break() };
+	}
+	raw::GENSIO_EVENT_AUTH_BEGIN => {
+	    err = unsafe { (*g).cb.auth_begin() };
+	}
+	raw::GENSIO_EVENT_PRECERT_VERIFY => {
+	    err = unsafe { (*g).cb.precert_verify() };
+	}
+	raw::GENSIO_EVENT_POSTCERT_VERIFY => {
+	    let errstr = {
+		if auxdata == std::ptr::null() {
+		    None
+		} else {
+		    let sl = unsafe { std::slice::from_raw_parts(auxdata,
+								 10000) };
+		    let cs = unsafe { ffi::CStr::from_ptr(sl[0]) };
+		    Some(cs.to_str().expect("Invalid string").to_string())
+		}
+	    };
+	    err = unsafe { (*g).cb.postcert_verify(ierr, &errstr) };
+	}
+	raw::GENSIO_EVENT_PASSWORD_VERIFY => {
+	    let cs = unsafe { ffi::CStr::from_ptr(buf as *const i8) };
+	    let s = cs.to_str().expect("Invalid string").to_string();
+	    err = unsafe { (*g).cb.password_verify(&s) };
+	}
+	raw::GENSIO_EVENT_REQUEST_PASSWORD => {
+	    let s;
+	    let maxlen = unsafe {*buflen as usize };
+	    (err, s) = unsafe { (*g).cb.request_password(maxlen as u64) };
+	    if err == 0 {
+		match s {
+		    None => return GE_INVAL,
+		    Some(s) => {
+			let len = s.len();
+			if len > maxlen {
+			    return GE_TOOBIG;
+			}
+			let cs = match ffi::CString::new(s) {
+			    Ok(v) => v,
+			    Err(_) => return GE_INVAL
+			};
+			let src = cs.to_bytes();
+			let dst = buf as *mut u8;
+			let dst = unsafe {
+			    std::slice::from_raw_parts_mut(dst, maxlen)
+			};
+			for i in 0 .. len - 1 {
+			    dst[i] = src[i];
+			}
+			unsafe { *buflen = len as GensioDS; }
+		    }
+		}
+	    }
+	}
+	raw::GENSIO_EVENT_REQUEST_2FA => {
+	    let src;
+	    (err, src) = unsafe { (*g).cb.request_2fa() };
+	    if err != 0 {
+		return err;
+	    }
+	    let src = match src {
+		None => return GE_INVAL,
+		Some(v) => v
+	    };
+	    let len = src.len();
+	    let dst = unsafe {
+		osfuncs::raw::gensio_os_funcs_zalloc((*g).o.o, len as GensioDS)
+	    };
+	    let dst = dst as *mut u8;
+	    let dst = unsafe {std::slice::from_raw_parts_mut(dst, len) };
+	    for i in 0 .. len - 1 {
+		dst[i] = src[i];
+	    }
+	    unsafe { *buflen = len as GensioDS; }
+	}
+	raw::GENSIO_EVENT_2FA_VERIFY => {
+	    let data = buf as *const u8;
+	    let data = unsafe {
+		std::slice::from_raw_parts(data, *buflen as usize)
+	    };
+	    err = unsafe { (*g).cb.verify_2fa(data) };
 	}
 	_ => err = GE_NOTSUP
     }
@@ -247,13 +405,13 @@ pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn GensioEvent>)
     };
     match err {
 	0 => {
-	    let d = Box::new(Gensio { _o: or.clone(), g: g, cb: cb.clone(),
-				       myptr: std::ptr::null_mut() });
+	    let d = Box::new(Gensio { o: or.clone(), g: g, cb: cb.clone(),
+				      myptr: std::ptr::null_mut() });
 	    let d = Box::into_raw(d);
 	    unsafe {
 		raw::gensio_set_user_data((*d).g, d as *mut ffi::c_void);
 	    }
-	    Ok(Gensio { _o: or, g: g, cb: cb, myptr: d })
+	    Ok(Gensio { o: or, g: g, cb: cb, myptr: d })
 	}
 	_ => Err(GE_INVAL)
     }
@@ -370,7 +528,7 @@ mod tests {
 	    0
 	}
 
-	fn read(&self, buf: &[u8], _auxdata: Option<Vec<String>>)
+	fn read(&self, buf: &[u8], _auxdata: &Option<Vec<String>>)
 		-> (i32, u64) {
 	    assert_eq!(buf.len(), 7);
 	    let s = unsafe { std::str::from_utf8_unchecked(buf) };

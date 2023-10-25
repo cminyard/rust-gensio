@@ -58,6 +58,10 @@ extern "C" {
     pub fn gensio_set_user_data(g: *const gensio, data: *const ffi::c_void);
 
     #[allow(improper_ctypes)]
+    pub fn gensio_set_callback(g: *const gensio, cb: gensio_event,
+			       data: *const ffi::c_void);
+
+    #[allow(improper_ctypes)]
     pub fn gensio_open(io: *const gensio, open_done: gensio_done_err,
 		       open_data: *mut ffi::c_void) -> ffi::c_int;
 

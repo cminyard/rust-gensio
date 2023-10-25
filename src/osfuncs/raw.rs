@@ -208,9 +208,14 @@ extern "C" {
     pub fn gensio_add_iod(o: *const gensio_os_funcs, kind: ffi::c_int, fd: ffi::c_int)
                           -> *const gensio_iod;
 
-    /// Release an allocated IOD.g
+    /// Release an allocated IOD.
     #[allow(improper_ctypes)]
     pub fn gensio_release_iod(o: *const gensio_os_funcs, iod: *const gensio_iod);
+
+    /// Allocate some gensio data.  For internal use only, subject to change.
+    #[allow(improper_ctypes)]
+    pub fn gensio_os_funcs_zalloc(o: *const gensio_os_funcs, len: gensiods)
+				  -> *mut ffi::c_void;
 }
 
 pub const GESNIO_IOD_INVALID: i32       = 0;
