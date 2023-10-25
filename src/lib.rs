@@ -117,7 +117,13 @@ extern "C" fn op_done(_io: *const raw::gensio,
 
 /// The struct that gets callbacks from a gensio will need to
 /// implement this trait.
-pub trait GensioEvent {
+pub trait Event {
+    /// A lot was reported dealing with the gensio.
+    fn log(&self, _s: String) {}
+
+    /// Called when parameter parsing is incorrect in str_to_gensio().
+    fn parmlog(&self, _s: String) {}
+
     /// Report a read error.  Unlike most other gensio interfaces,
     /// which combine the error with the read() method, the error
     /// report is done separately here.
@@ -174,7 +180,7 @@ pub trait GensioEvent {
 pub struct Gensio {
     o: Arc<osfuncs::IOsFuncs>, // Used to keep the os funcs alive.
     g: *const raw::gensio,
-    cb: Arc<dyn GensioEvent>,
+    cb: Arc<dyn Event>,
 
     // Points to the structure that is passed to the callback, which
     // is different than what is returned to the user.
@@ -241,7 +247,7 @@ fn auxfree(v: Option<Vec<*mut ffi::c_char>>) {
 struct DummyEvHndl {
 }
 
-impl GensioEvent for DummyEvHndl {
+impl Event for DummyEvHndl {
     fn err(&self, _err: i32) -> i32 {
 	GE_NOTSUP
     }
@@ -260,6 +266,26 @@ extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 
     let err;
     match event {
+	raw::GENSIO_EVENT_LOG => {
+	    let s = unsafe { raw::gensio_loginfo_to_str(buf) };
+	    if s != std::ptr::null_mut() {
+		let cs = unsafe { ffi::CStr::from_ptr(s) };
+		let logstr = cs.to_str().expect("Invalid string").to_string();
+		unsafe { (*g).cb.log(logstr); }
+		unsafe { raw::gensio_free_loginfo_str(s); }
+	    }
+	    err = 0;
+	}
+	raw::GENSIO_EVENT_PARMLOG => {
+	    let s = unsafe { raw::gensio_loginfo_to_str(buf) };
+	    if s != std::ptr::null_mut() {
+		let cs = unsafe { ffi::CStr::from_ptr(s) };
+		let logstr = cs.to_str().expect("Invalid string").to_string();
+		unsafe { (*g).cb.parmlog(logstr); }
+		unsafe { raw::gensio_free_loginfo_str(s); }
+	    }
+	    err = 0;
+	}
 	raw::GENSIO_EVENT_READ => {
 	    if ierr != 0 {
 		return unsafe {(*g).cb.err(ierr)};
@@ -390,7 +416,7 @@ extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 /// Arc holding the reference to the event handler.  This function
 /// clones it so it can make sure the data stays around until the
 /// gensio is closed.
-pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn GensioEvent>)
+pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
 	   -> Result<Gensio, i32>
 {
     let or = o.raw().clone();
@@ -512,6 +538,278 @@ impl Drop for Gensio {
     }
 }
 
+/// The struct that gets callbacks from a gensio will need to
+/// implement this trait.
+pub trait AccepterEvent {
+    /// A lot was reported dealing with the gensio.
+    fn log(&self, _s: String) {}
+
+    /// Called when parameter parsing is incorrect in str_to_gensio().
+    fn parmlog(&self, _s: String) {}
+
+    fn new_connection(&self, g: Arc<Gensio>) -> i32;
+
+    fn auth_begin(&self) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn precert_verify(&self) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn postcert_verify(&self, _err: i32, _errstr: &Option<String>) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn password_verify(&self, _passwd: &String) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn request_password(&self, _maxsize: u64) -> (i32, Option<String>) {
+	(GE_NOTSUP, None)
+    }
+
+    fn verify_2fa(&self, _data: &[u8]) -> i32 {
+	GE_NOTSUP
+    }
+
+    fn request_2fa(&self) -> (i32, Option<&[u8]>) {
+	(GE_NOTSUP, None)
+    }
+}
+
+pub struct Accepter {
+    o: Arc<osfuncs::IOsFuncs>, // Used to keep the os funcs alive.
+    a: *const raw::gensio_accepter,
+    cb: Arc<dyn AccepterEvent>,
+
+    // Points to the structure that is passed to the callback, which
+    // is different than what is returned to the user.
+    myptr: *mut Accepter
+}
+
+extern "C" fn acc_evhndl(_acc: *const raw::gensio_accepter,
+			 user_data: *const ffi::c_void,
+			 event: ffi::c_int,
+			 data: *const ffi::c_void)
+			 -> ffi::c_int {
+    let a = user_data as *mut Accepter;
+
+    let err: i32;
+    match event {
+	raw::GENSIO_ACC_EVENT_LOG => {
+	    let s = unsafe { raw::gensio_loginfo_to_str(data) };
+	    if s != std::ptr::null_mut() {
+		let cs = unsafe { ffi::CStr::from_ptr(s) };
+		let logstr = cs.to_str().expect("Invalid string").to_string();
+		unsafe { (*a).cb.log(logstr); }
+		unsafe { raw::gensio_free_loginfo_str(s); }
+	    }
+	    err = 0;
+	}
+	raw::GENSIO_ACC_EVENT_PARMLOG => {
+	    let s = unsafe { raw::gensio_loginfo_to_str(data) };
+	    if s != std::ptr::null_mut() {
+		let cs = unsafe { ffi::CStr::from_ptr(s) };
+		let logstr = cs.to_str().expect("Invalid string").to_string();
+		unsafe { (*a).cb.parmlog(logstr); }
+		unsafe { raw::gensio_free_loginfo_str(s); }
+	    }
+	    err = 0;
+	}
+	raw::GENSIO_ACC_EVENT_NEW_CONNECTION => {
+	    let g = data as *const raw::gensio;
+	    let cb = Arc::new(DummyEvHndl{ });
+	    let d = Box::new(Gensio { o: unsafe {(*a).o.clone() }, g: g,
+				      cb: cb.clone(),
+				      myptr: std::ptr::null_mut() });
+	    let d = Box::into_raw(d);
+	    unsafe {
+		raw::gensio_set_callback((*d).g, evhndl, d as *mut ffi::c_void);
+	    }
+	    err = unsafe {
+		(*a).cb.new_connection(Arc::new(Gensio
+						{ o: (*a).o.clone(),
+						  g: g, cb: cb, myptr: d }))
+	    };
+	}
+	raw::GENSIO_ACC_EVENT_AUTH_BEGIN => {
+	    err = unsafe { (*a).cb.auth_begin() };
+	}
+	raw::GENSIO_ACC_EVENT_PRECERT_VERIFY => {
+	    err = unsafe { (*a).cb.precert_verify() };
+	}
+	raw::GENSIO_ACC_EVENT_POSTCERT_VERIFY => {
+	    let vd = data as *const raw::gensio_acc_postcert_verify_data;
+	    let errstr = {
+		if unsafe {(*vd).errstr } == std::ptr::null() {
+		    None
+		} else {
+		    let cs = unsafe { ffi::CStr::from_ptr((*vd).errstr) };
+		    Some(cs.to_str().expect("Invalid string").to_string())
+		}
+	    };
+	    err = unsafe { (*a).cb.postcert_verify((*vd).err, &errstr) };
+	}
+	raw::GENSIO_ACC_EVENT_PASSWORD_VERIFY => {
+	    let vd = data as *const raw::gensio_acc_password_verify_data;
+	    let cs = unsafe { ffi::CStr::from_ptr((*vd).password) };
+	    let s = cs.to_str().expect("Invalid string").to_string();
+	    err = unsafe { (*a).cb.password_verify(&s) };
+	}
+	raw::GENSIO_ACC_EVENT_REQUEST_PASSWORD => {
+	    let mut vd = data as *mut raw::gensio_acc_password_verify_data;
+	    let s;
+	    let maxlen = unsafe { (*vd).password_len } as usize;
+	    (err, s) = unsafe { (*a).cb.request_password(maxlen as u64) };
+	    if err == 0 {
+		match s {
+		    None => return GE_INVAL,
+		    Some(s) => {
+			let len = s.len();
+			if len > maxlen {
+			    return GE_TOOBIG;
+			}
+			let cs = match ffi::CString::new(s) {
+			    Ok(v) => v,
+			    Err(_) => return GE_INVAL
+			};
+			let src = cs.to_bytes();
+			let dst = unsafe { (*vd).password as *mut u8 };
+			let dst = unsafe {
+			    std::slice::from_raw_parts_mut(dst, maxlen)
+			};
+			for i in 0 .. len - 1 {
+			    dst[i] = src[i];
+			}
+			unsafe { (*vd).password_len = len as GensioDS; }
+		    }
+		}
+	    }
+	}
+	raw::GENSIO_ACC_EVENT_2FA_VERIFY => {
+	    let vd = data as *mut raw::gensio_acc_password_verify_data;
+	    let data = unsafe { (*vd).password } as *const u8;
+	    let data = unsafe {
+		std::slice::from_raw_parts(data, (*vd).password_len as usize)
+	    };
+	    err = unsafe { (*a).cb.verify_2fa(data) };
+	}
+	raw::GENSIO_ACC_EVENT_REQUEST_2FA => {
+	    let mut vd = data as *mut raw::gensio_acc_password_verify_data;
+	    let src;
+	    (err, src) = unsafe { (*a).cb.request_2fa() };
+	    if err != 0 {
+		return err;
+	    }
+	    let src = match src {
+		None => return GE_INVAL,
+		Some(v) => v
+	    };
+	    let len = src.len();
+	    if len > unsafe { (*vd).password_len } as usize {
+		return GE_TOOBIG;
+	    }
+	    let dst = unsafe { (*vd).password as *mut u8 };
+	    let dst = unsafe {std::slice::from_raw_parts_mut(dst, len) };
+	    for i in 0 .. len - 1 {
+		dst[i] = src[i];
+	    }
+	    unsafe {(*vd).password_len = len as GensioDS; }
+	}
+	_ => { err = GE_NOTSUP; }
+    }
+    err
+}
+
+pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
+		    cb: Arc<dyn AccepterEvent>)
+		    -> Result<Accepter, i32> {
+    
+    let or = o.raw().clone();
+    let a: *const raw::gensio_accepter = std::ptr::null();
+    let s = match ffi::CString::new(s) {
+	Ok(s) => s,
+	Err(_) => return Err(GE_INVAL)
+    };
+    let err = unsafe {
+	raw::str_to_gensio_accepter(s.as_ptr(), or.o, acc_evhndl,
+				    std::ptr::null(), &a)
+    };
+    match err {
+	0 => {
+	    let d = Box::new(Accepter { o: or.clone(), a: a, cb: cb.clone(),
+					myptr: std::ptr::null_mut() });
+	    let d = Box::into_raw(d);
+	    unsafe {
+		raw::gensio_acc_set_user_data((*d).a, d as *mut ffi::c_void);
+	    }
+	    Ok(Accepter { o: or, a: a, cb: cb, myptr: d })
+	}
+	_ => Err(GE_INVAL)
+    }
+}
+
+/// Shutdown callbacks will need to implement this trait.
+pub trait AccepterOpDone {
+    /// Report that the operation (close) has completed.
+    fn done(&self); // FIXME = make this &mut
+}
+
+struct AccepterOpDoneData {
+    cb: Arc<dyn AccepterOpDone>
+}
+
+extern "C" fn acc_op_done(_io: *const raw::gensio_accepter,
+			  user_data: *mut ffi::c_void) {
+    let d = user_data as *mut AccepterOpDoneData;
+    let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
+    d.cb.done();
+}
+
+impl Accepter {
+    pub fn startup(&self) -> Result<(), i32> {
+	let err = unsafe {
+	    raw::gensio_acc_startup(self.a)
+	};
+	match err {
+	    0 => Ok(()),
+	    _ => Err(err)
+	}
+    }
+
+    /// Note that the accepter is not shut down until the callback is called.
+    pub fn shutdown(&self, cb: Arc<dyn AccepterOpDone>) -> Result<(), i32> {
+	let d = Box::new(AccepterOpDoneData { cb : cb });
+	let d = Box::into_raw(d);
+	let err = unsafe {
+	    raw::gensio_acc_shutdown(self.a, acc_op_done, d as *mut ffi::c_void)
+	};
+	match err {
+	    0 => Ok(()),
+	    _ => {
+		unsafe { drop(Box::from_raw(d)); } // Free the data
+		Err(err)
+	    }
+	}
+    }
+}
+
+impl Drop for Accepter {
+    fn drop(&mut self) {
+	unsafe {
+	    // Only the Gensio given to the user has a pointer set in
+	    // myptr, so we clean when the main gensio is freed then
+	    // free the one passed to the callbacks.
+	    if self.myptr != std::ptr::null_mut() {
+		raw::gensio_acc_shutdown_s(self.a);
+		raw::gensio_acc_free(self.a);
+		drop(Box::from_raw(self.myptr));
+	    }
+	}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -522,7 +820,7 @@ mod tests {
 	w: osfuncs::Waiter
     }
 
-    impl GensioEvent for EvStruct {
+    impl Event for EvStruct {
 	fn err(&self, err: i32) -> i32 {
 	    assert_eq!(err, 0);
 	    0

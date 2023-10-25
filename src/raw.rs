@@ -44,7 +44,58 @@ pub type gensio_done_err = extern "C" fn (io: *const gensio,
 pub type gensio_done = extern "C" fn (io: *const gensio,
 				      user_data: *mut ffi::c_void);
 
+pub const GENSIO_ACC_EVENT_NEW_CONNECTION: ffi::c_int =		1;
+pub const GENSIO_ACC_EVENT_LOG: ffi::c_int =			2;
+// event log and parm log come in as this, we use a C helper to convert
+// it to a string.
+//struct gensio_loginfo {
+//    enum gensio_log_levels level;
+//    const char *str;
+//    va_list args;
+//};
+
+pub const GENSIO_ACC_EVENT_PRECERT_VERIFY: ffi::c_int =			3;
+pub const GENSIO_ACC_EVENT_AUTH_BEGIN: ffi::c_int =			4;
+
+pub const GENSIO_ACC_EVENT_PASSWORD_VERIFY: ffi::c_int =		5;
+pub const GENSIO_ACC_EVENT_REQUEST_PASSWORD: ffi::c_int =		6;
+#[repr(C)]
+pub struct gensio_acc_password_verify_data {
+    pub io: *const gensio,
+    pub password: *const ffi::c_char,
+    pub password_len: gensiods,
+}
+
+pub const GENSIO_ACC_EVENT_POSTCERT_VERIFY: ffi::c_int =		7;
+#[repr(C)]
+pub struct gensio_acc_postcert_verify_data {
+    pub io: *const gensio,
+    pub err: ffi::c_int,
+    pub errstr: *const ffi::c_char,
+}
+
+pub const GENSIO_ACC_EVENT_2FA_VERIFY: ffi::c_int =			8;
+pub const GENSIO_ACC_EVENT_REQUEST_2FA: ffi::c_int =			9;
+/* Uses struct gensio_acc_password_verify_data */
+
+pub const GENSIO_ACC_EVENT_PARMLOG: ffi::c_int =			10;
+
+#[repr(C)]
+pub struct gensio_accepter;
+
+#[allow(non_camel_case_types)]
+pub type gensio_accepter_event = extern "C" fn (acc: *const gensio_accepter,
+						user_data: *const ffi::c_void,
+						event: ffi::c_int,
+						data: *const ffi::c_void)
+						-> ffi::c_int;
+
+#[allow(non_camel_case_types)]
+pub type gensio_acc_done = extern "C" fn (acc: *const gensio_accepter,
+					  user_data: *mut ffi::c_void);
+
 #[link(name = "gensio")]
+#[link(name = "gensiohelpers")]
 extern "C" {
     #[allow(improper_ctypes)]
     pub fn str_to_gensio(s: *const ffi::c_char,
@@ -83,6 +134,40 @@ extern "C" {
     #[allow(improper_ctypes)]
     pub fn gensio_set_read_callback_enable(g: *const gensio,
 					   enabled: ffi::c_int);
+
+    #[allow(improper_ctypes)]
+    pub fn str_to_gensio_accepter(s: *const ffi::c_char,
+				  o: *const gensio_os_funcs,
+				  cb: gensio_accepter_event,
+				  user_data: *const ffi::c_void,
+				  racc: *const *const gensio_accepter)
+				  -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_set_user_data(a: *const gensio_accepter,
+				    user_data: *const ffi::c_void);
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_startup(a: *const gensio_accepter) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_shutdown(a: *const gensio_accepter,
+			       cb: gensio_acc_done,
+			       shutdown_data: *const ffi::c_void)
+			       -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_shutdown_s(a: *const gensio_accepter) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_free(a: *const gensio_accepter) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_loginfo_to_str(vloginfo: *const ffi::c_void)
+				 -> *mut ffi::c_char;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_free_loginfo_str(str: *mut ffi::c_char);
 }
 
 #[cfg(test)]

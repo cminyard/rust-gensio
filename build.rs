@@ -6,4 +6,7 @@ fn main() {
     cc::Build::new()
 	.file("src/oshelpers.c")
 	.compile("gensiooshelpers");
+    cc::Build::new()
+	.file("src/ghelpers.c")
+	.compile("gensiohelpers");
 }
