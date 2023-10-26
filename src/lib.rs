@@ -277,7 +277,7 @@ extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    err = 0;
 	}
 	raw::GENSIO_EVENT_PARMLOG => {
-	    let s = unsafe { raw::gensio_loginfo_to_str(buf) };
+	    let s = unsafe { raw::gensio_parmlog_to_str(buf) };
 	    if s != std::ptr::null_mut() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
@@ -425,7 +425,7 @@ pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
 	Ok(s) => s,
 	Err(_) => return Err(GE_INVAL)
     };
-    // Create a temporary data item so str_to_gensio can report parmerrs.
+    // Create a temporary data item so str_to_gensio can report parmlogs.
     let dt = Box::new(Gensio { o: or.clone(), g: std::ptr::null(),
 			       cb: cb.clone(),
 			       myptr: std::ptr::null_mut() });
@@ -472,6 +472,24 @@ impl Gensio {
 	}
     }
 
+    pub fn set_handler(&self, cb: Arc<dyn Event>) {
+	let g = self.myptr as *mut Gensio;
+
+	unsafe { (*g).cb = cb; }
+    }
+
+    // Open the gensio synchronously.  Wait until the open completes
+    // before returning.
+    pub fn open_s(&self) -> Result<(), i32> {
+	let err = unsafe {
+	    raw::gensio_open_s(self.g)
+	};
+	match err {
+	    0 => Ok(()),
+	    _ => Err(err)
+	}
+    }
+
     /// Close the gensio.  The cb will be called when the operation
     /// completes.  Note that the Arc holding the callback is done so
     /// the callback data can be kept around until the callback is
@@ -490,6 +508,18 @@ impl Gensio {
 		unsafe { drop(Box::from_raw(d)); } // Free the data
 		Err(err)
 	    }
+	}
+    }
+
+    // Close the gensio synchronously.  Wait until the close completes
+    // before returning.
+    pub fn close_s(&self) -> Result<(), i32> {
+	let err = unsafe {
+	    raw::gensio_close_s(self.g)
+	};
+	match err {
+	    0 => Ok(()),
+	    _ => Err(err)
 	}
     }
 
@@ -615,7 +645,7 @@ extern "C" fn acc_evhndl(_acc: *const raw::gensio_accepter,
 	    err = 0;
 	}
 	raw::GENSIO_ACC_EVENT_PARMLOG => {
-	    let s = unsafe { raw::gensio_loginfo_to_str(data) };
+	    let s = unsafe { raw::gensio_parmlog_to_str(data) };
 	    if s != std::ptr::null_mut() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
@@ -732,7 +762,6 @@ extern "C" fn acc_evhndl(_acc: *const raw::gensio_accepter,
 pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
 		    cb: Arc<dyn AccepterEvent>)
 		    -> Result<Accepter, i32> {
-    
     let or = o.raw().clone();
     let a: *const raw::gensio_accepter = std::ptr::null();
     let s = match ffi::CString::new(s) {
@@ -740,7 +769,7 @@ pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
 	Err(_) => return Err(GE_INVAL)
     };
     // Create a temporary data item so str_to_gensio_accepter can
-    // report parmerrs.
+    // report parmlogs.
     let dt = Box::new(Accepter { o: or.clone(), a: std::ptr::null(),
 				 cb: cb.clone(),
 				 myptr: std::ptr::null_mut() });
@@ -829,6 +858,7 @@ impl Drop for Accepter {
 mod tests {
     use std::time::Duration;
     use serial_test::serial;
+    use std::sync::Mutex;
     use super::*;
 
     struct EvStruct {
@@ -871,7 +901,7 @@ mod tests {
 
     impl osfuncs::GensioLogHandler for LogHandler {
 	fn log(&self, _logstr: String) {
-	    
+	    // What to fill in here?
 	}
     }
 
@@ -895,5 +925,181 @@ mod tests {
 	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
 	g.close(e.clone()).expect("Couldn't close gensio");
 	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+    }
+
+    struct AccMutData {
+	logstr: Option<String>,
+	ag: Option<Arc<Gensio>>,
+    }
+
+    struct AccEvent {
+	w: osfuncs::Waiter,
+	d: Mutex<AccMutData>,
+    }
+
+    impl AccepterEvent for AccEvent {
+	fn parmlog(&self, s: String) {
+	    let mut d = self.d.lock().unwrap();
+	    let chks = match &d.logstr {
+		None => {
+		    printfit(&format!("Unexpected log: {s}\n").to_string());
+		    assert!(false);
+		    return;
+		}
+		Some(s) => s
+	    };
+	    assert_eq!(&s, chks);
+	    d.logstr = None;
+	    self.w.wake().expect("Wake failed");
+	}
+
+	fn new_connection(&self, g: Arc<Gensio>) -> i32 {
+	    let mut d = self.d.lock().unwrap();
+	    d.ag = Some(g);
+	    self.w.wake().expect("Wake failed");
+	    0
+	}
+    }
+
+    impl AccepterOpDone for AccEvent {
+	fn done(&self) {
+	    self.w.wake().expect("Wake close done failed");
+	}
+    }
+
+    struct GenMutData {
+	logstr: Option<String>,
+	experr: i32,
+    }
+
+    struct GenEvent {
+	w: osfuncs::Waiter,
+	_g: Option<Arc<Gensio>>,
+	d: Mutex<GenMutData>,
+    }
+
+    impl Event for GenEvent {
+	fn parmlog(&self, s: String) {
+	    let mut d = self.d.lock().unwrap();
+	    let chks = match &d.logstr {
+		None => {
+		    printfit(&format!("Unexpected log: {s}\n").to_string());
+		    assert!(false);
+		    return;
+		}
+		Some(s) => s
+	    };
+	    assert_eq!(&s, chks);
+	    d.logstr = None;
+	    self.w.wake().expect("Wake failed");
+	}
+
+	fn err(&self, err: i32) -> i32 {
+	    let d = self.d.lock().unwrap();
+	    assert_eq!(d.experr, err);
+	    self.w.wake().expect("Wake failed");
+	    0
+	}
+
+	fn read(&self, _buf: &[u8], _auxdata: &Option<Vec<String>>)
+		-> (i32, u64) {
+	    (0, 0)
+	}
+    }
+
+    #[test]
+    #[serial]
+    fn parmerr() {
+	let o = osfuncs::new(Arc::new(LogHandler))
+	    .expect("Couldn't allocate os funcs");
+	o.proc_setup().expect("Couldn't setup proc");
+
+	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let d = Mutex::new(AccMutData { logstr: None, ag: None });
+	let e = Arc::new(AccEvent { w: w, d: d });
+
+	{
+	    let mut d = e.d.lock().unwrap();
+	    d.logstr = Some(
+		"accepter base: Unknown gensio type: asdf,127.0.0.1:1234"
+		    .to_string());
+	}
+	let a = new_accepter("asdf,127.0.0.1:1234".to_string(), &o, e.clone());
+	match a {
+	    Ok(_a) => assert!(false),
+	    Err(e) => assert_eq!(e, GE_INVAL)
+	};
+    }
+
+    #[test]
+    #[serial]
+    fn acc_conn1() {
+	let o = osfuncs::new(Arc::new(LogHandler))
+	    .expect("Couldn't allocate os funcs");
+	o.proc_setup().expect("Couldn't setup proc");
+
+	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let d = Mutex::new(AccMutData { logstr: None, ag: None });
+	let e1 = Arc::new(AccEvent { w: w, d: d });
+	let a = new_accepter("tcp,127.0.0.1,1234".to_string(), &o, e1.clone())
+	    .expect("Couldn't allocate accepter");
+	a.startup().expect("Couldn't start accepter");
+
+	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
+	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
+	let g = new("tcp,127.0.0.1,1234".to_string(), &o, e2.clone()).
+	    expect("Couldn't alocate gensio");
+	g.open_s().expect("Couldn't open gensio");
+
+	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	// Let automatic cleanup happen.
+    }
+
+    #[test]
+    #[serial]
+    fn acc_conn2() {
+	let o = osfuncs::new(Arc::new(LogHandler))
+	    .expect("Couldn't allocate os funcs");
+	o.proc_setup().expect("Couldn't setup proc");
+
+	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let d = Mutex::new(AccMutData { logstr: None, ag: None });
+	let e1 = Arc::new(AccEvent { w: w, d: d });
+	let a = new_accepter("tcp,127.0.0.1,1234".to_string(), &o, e1.clone())
+	    .expect("Couldn't allocate accepter");
+	a.startup().expect("Couldn't start accepter");
+
+	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
+	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
+	let g = new("tcp,127.0.0.1,1234".to_string(), &o, e2.clone()).
+	    expect("Couldn't alocate gensio");
+	g.open_s().expect("Couldn't open gensio");
+
+	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+
+	// Assign a handler for the new gensio
+	let e3;
+	{
+	    let w = o.new_waiter().expect("Couldn't allocate waiter");
+	    let d = Mutex::new(GenMutData { logstr: None,
+					    experr: GE_REMCLOSE });
+	    e3 = Arc::new(GenEvent { w: w, _g: None, d: d });
+	    let d1 = e1.d.lock().unwrap();
+	    match &d1.ag {
+		None => assert!(false),
+		Some(d2) => {
+		    d2.set_handler(e3.clone());
+		    d2.read_enable(true);
+		}
+	    }
+	}
+	g.close_s().expect("Close failed");
+	// Wait for the error from the other end.
+	e3.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+
+	a.shutdown(e1.clone()).expect("Shutdown failed");
+	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
     }
 }

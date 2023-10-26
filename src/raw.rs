@@ -46,7 +46,7 @@ pub type gensio_done = extern "C" fn (io: *const gensio,
 
 pub const GENSIO_ACC_EVENT_NEW_CONNECTION: ffi::c_int =		1;
 pub const GENSIO_ACC_EVENT_LOG: ffi::c_int =			2;
-// event log and parm log come in as this, we use a C helper to convert
+// event logs come in as this, we use a C helper to convert
 // it to a string.
 //struct gensio_loginfo {
 //    enum gensio_log_levels level;
@@ -79,6 +79,12 @@ pub const GENSIO_ACC_EVENT_REQUEST_2FA: ffi::c_int =			9;
 /* Uses struct gensio_acc_password_verify_data */
 
 pub const GENSIO_ACC_EVENT_PARMLOG: ffi::c_int =			10;
+// event logs come in as this, we use a C helper to convert
+// it to a string.
+//struct gensio_parmlog_data {
+//    const char *log;
+//    va_list args;
+//};
 
 #[repr(C)]
 pub struct gensio_accepter;
@@ -115,6 +121,9 @@ extern "C" {
     #[allow(improper_ctypes)]
     pub fn gensio_open(io: *const gensio, open_done: gensio_done_err,
 		       open_data: *mut ffi::c_void) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_open_s(io: *const gensio) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_close(io: *const gensio, close_done: gensio_done,
@@ -167,6 +176,10 @@ extern "C" {
 				 -> *mut ffi::c_char;
 
     #[allow(improper_ctypes)]
+    pub fn gensio_parmlog_to_str(vloginfo: *const ffi::c_void)
+				 -> *mut ffi::c_char;
+
+    #[allow(improper_ctypes)]
     pub fn gensio_free_loginfo_str(str: *mut ffi::c_char);
 }
 
@@ -205,7 +218,7 @@ mod tests {
 	// a pointer to create a CString with from_raw() because then Rust
 	// takes over ownership of the data, and will free it when this
 	// function exits.
-	let b = 
+	let b =
 	    unsafe {
 		std::slice::from_raw_parts(buf as *mut u8, *buflen as usize)
 	    };

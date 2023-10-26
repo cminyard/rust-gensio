@@ -163,7 +163,7 @@ impl OsFuncs {
         if self.proc_data == std::ptr::null() {
             return Err(crate::GE_NOTREADY);
         }
-        
+
         let mut d = self.term_handler.cb.lock().unwrap();
         match *d {
             None => (),
@@ -189,7 +189,7 @@ impl OsFuncs {
         if self.proc_data == std::ptr::null() {
             return Err(crate::GE_NOTREADY);
         }
-        
+
         let mut d = self.hup_handler.cb.lock().unwrap();
         match *d {
             None => (),
@@ -513,7 +513,7 @@ impl Drop for Timer {
     // function will be called.
     //
     // If the timer is not running but there is already a stop pending,
-    // stop_timer_with_done() will return we still want to do that stop, 
+    // stop_timer_with_done() will return we still want to do that stop,
     fn drop(&mut self) {
 	unsafe {
 	    let mut do_wait = false;
@@ -610,7 +610,7 @@ mod tests {
 
     impl GensioLogHandler for LogHandler {
 	fn log(&self, _logstr: String) {
-	    
+	    // What to fill in here?
 	}
     }
 
