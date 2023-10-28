@@ -11,6 +11,7 @@
 
 use std::ffi;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub mod osfuncs;
 pub mod raw;
@@ -551,11 +552,217 @@ impl Gensio {
 	}
     }
 
+    /// Write some data to the gensio.  On success, the number of
+    /// bytes written is returned.  On failure an error code is
+    /// returned.
+    pub fn write_s(&self, data: &[u8], timeout: Option<&Duration>)
+		   -> Result<u64, i32> {
+	let t;
+	let tptr: *const osfuncs::raw::gensio_time = match timeout {
+	    None => {
+		std::ptr::null()
+	    }
+	    Some(gt) => {
+		t = osfuncs::raw::gensio_time{
+		    secs: gt.as_secs() as i64,
+		    nsecs: gt.subsec_nanos() as i32 };
+		&t
+	    }
+	};
+
+	let mut count: GensioDS = 0;
+
+	let err = unsafe {
+	    raw::gensio_write_s(self.g, &mut count,
+				data.as_ptr() as *const ffi::c_void,
+				data.len() as GensioDS, tptr)
+	};
+	match err {
+	    0 => Ok(count),
+	    _ => Err(err)
+	}
+    }
+
+    /// Write some data to the gensio.  Allow signals to interrupt.
+    /// On success, the number of bytes written is returned.  On
+    /// failure an error code is returned.
+    pub fn write_s_intr(&self, data: &[u8], timeout: Option<&Duration>)
+			-> Result<u64, i32> {
+	let t;
+	let tptr: *const osfuncs::raw::gensio_time = match timeout {
+	    None => {
+		std::ptr::null()
+	    }
+	    Some(gt) => {
+		t = osfuncs::raw::gensio_time{
+		    secs: gt.as_secs() as i64,
+		    nsecs: gt.subsec_nanos() as i32 };
+		&t
+	    }
+	};
+
+	let mut count: GensioDS = 0;
+
+	let err = unsafe {
+	    raw::gensio_write_s_intr(self.g, &mut count,
+				     data.as_ptr() as *const ffi::c_void,
+				     data.len() as GensioDS, tptr)
+	};
+	match err {
+	    0 => Ok(count),
+	    _ => Err(err)
+	}
+    }
+
+    /// Read some data from the gensio.  On success, the number of
+    /// bytes read is returned.  On failure an error code is
+    /// returned.
+    pub fn read_s(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
+		  -> Result<u64, i32> {
+	let t;
+	let tptr: *const osfuncs::raw::gensio_time = match timeout {
+	    None => {
+		std::ptr::null()
+	    }
+	    Some(gt) => {
+		t = osfuncs::raw::gensio_time{
+		    secs: gt.as_secs() as i64,
+		    nsecs: gt.subsec_nanos() as i32 };
+		&t
+	    }
+	};
+
+	let mut count: GensioDS = 0;
+
+	let err = unsafe {
+	    raw::gensio_read_s(self.g, &mut count,
+			       data.as_mut_ptr() as *mut ffi::c_void,
+			       data.capacity() as GensioDS, tptr)
+	};
+	match err {
+	    0 => {
+		unsafe { data.set_len(count as usize); }
+		Ok(count)
+	    }
+	    _ => Err(err)
+	}
+    }
+
+    /// Read some data from the gensio.  On success, the number of
+    /// bytes read is returned.  On failure an error code is
+    /// returned.
+    pub fn read_s_intr(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
+		  -> Result<u64, i32> {
+	let t;
+	let tptr: *const osfuncs::raw::gensio_time = match timeout {
+	    None => {
+		std::ptr::null()
+	    }
+	    Some(gt) => {
+		t = osfuncs::raw::gensio_time{
+		    secs: gt.as_secs() as i64,
+		    nsecs: gt.subsec_nanos() as i32 };
+		&t
+	    }
+	};
+
+	let mut count: GensioDS = 0;
+
+	let err = unsafe {
+	    raw::gensio_read_s_intr(self.g, &mut count,
+				    data.as_mut_ptr() as *mut ffi::c_void,
+				    data.capacity() as GensioDS, tptr)
+	};
+	match err {
+	    0 => {
+		unsafe { data.set_len(count as usize); }
+		Ok(count)
+	    }
+	    _ => Err(err)
+	}
+    }
+
     /// Enable or disable the read callback.
     pub fn read_enable(&self, enable: bool) {
 	let enable = match enable { true => 1, false => 0 };
 	unsafe {
 	    raw::gensio_set_read_callback_enable(self.g, enable);
+	}
+    }
+
+    /// Enable or disable the write callback.
+    pub fn write_enable(&self, enable: bool) {
+	let enable = match enable { true => 1, false => 0 };
+	unsafe {
+	    raw::gensio_set_write_callback_enable(self.g, enable);
+	}
+    }
+
+    pub fn get_type(&self, depth: u32) -> String {
+	let s;
+	unsafe {
+	    let cs = raw::gensio_get_type(self.g, depth as ffi::c_uint);
+	    let cs = ffi::CStr::from_ptr(cs);
+	    s = cs.to_str().expect("Invalid string").to_string();
+	}
+	s
+    }
+
+    pub fn is_client(&self) -> bool {
+	unsafe {
+	    raw::gensio_is_client(self.g) != 0
+	}
+    }
+
+    pub fn is_reliable(&self) -> bool {
+	unsafe {
+	    raw::gensio_is_reliable(self.g) != 0
+	}
+    }
+
+    pub fn is_packet(&self) -> bool {
+	unsafe {
+	    raw::gensio_is_packet(self.g) != 0
+	}
+    }
+
+    pub fn is_authenticated(&self) -> bool {
+	unsafe {
+	    raw::gensio_is_authenticated(self.g) != 0
+	}
+    }
+
+    pub fn is_encrypted(&self) -> bool {
+	unsafe {
+	    raw::gensio_is_encrypted(self.g) != 0
+	}
+    }
+
+    pub fn is_message(&self) -> bool {
+	unsafe {
+	    raw::gensio_is_message(self.g) != 0
+	}
+    }
+
+    pub fn is_mux(&self) -> bool {
+	unsafe {
+	    raw::gensio_is_mux(self.g) != 0
+	}
+    }
+
+    pub fn set_sync(&self) -> Result<(), i32> {
+	let err = unsafe { raw::gensio_set_sync(self.g) };
+	match err {
+	    0 => Ok(()),
+	    _ => Err(err)
+	}
+    }
+
+    pub fn clear_sync(&self) -> Result<(), i32> {
+	let err = unsafe { raw::gensio_clear_sync(self.g) };
+	match err {
+	    0 => Ok(()),
+	    _ => Err(err)
 	}
     }
 }
@@ -1091,10 +1298,37 @@ mod tests {
 		None => assert!(false),
 		Some(d2) => {
 		    d2.set_handler(e3.clone());
-		    d2.read_enable(true);
 		}
 	    }
+
 	}
+	assert_eq!(g.get_type(0), "tcp".to_string());
+
+	{
+	    let d1 = e1.d.lock().unwrap();
+	    let ag;
+	    match &d1.ag {
+		None => panic!("No gensio"),
+		Some(d2) => ag = d2
+	    }
+
+	    g.set_sync().expect("Set sync 1 failed");
+	    ag.set_sync().expect("Set sync 2 failed");
+	    let v: [u8; 4] = [ 10, 20, 30, 40 ];
+	    let l = g.write_s(&v, None).expect("Write failed");
+	    assert_eq!(l, 4);
+
+	    let mut data: Vec<u8> = Vec::new();
+	    data.reserve(10);
+	    let l = ag.read_s(&mut data, None).expect("Read failed");
+	    assert_eq!(l, 4);
+	    for i in 0 .. 4 {
+		assert_eq!(v[i], data[i]);
+	    }
+	    ag.clear_sync().expect("Clear sync failed");
+	    ag.read_enable(true);
+	}
+
 	g.close_s().expect("Close failed");
 	// Wait for the error from the other end.
 	e3.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");

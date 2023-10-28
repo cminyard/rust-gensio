@@ -5,6 +5,7 @@
 use std::ffi;
 use crate::osfuncs::raw::gensiods;
 use crate::osfuncs::raw::gensio_os_funcs;
+use crate::osfuncs::raw::gensio_time;
 
 #[repr(C)]
 pub struct gensio;
@@ -136,13 +137,68 @@ extern "C" {
     pub fn gensio_free(io: *const gensio);
 
     #[allow(improper_ctypes)]
+    pub fn gensio_get_type(io: *const gensio, depth: ffi::c_uint)
+			   -> *const ffi::c_char;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_is_client(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_is_reliable(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_is_packet(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_is_authenticated(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_is_encrypted(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_is_message(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_is_mux(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_set_sync(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_clear_sync(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
     pub fn gensio_write(io: *const gensio, count: &mut gensiods,
 			buf: *const ffi::c_void, buflen: gensiods,
 			auxdata: *const *const ffi::c_char) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
+    pub fn gensio_write_s(io: *const gensio, count: &mut gensiods,
+			  buf: *const ffi::c_void, buflen: gensiods,
+			  timeout: *const gensio_time) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_write_s_intr(io: *const gensio, count: &mut gensiods,
+			       buf: *const ffi::c_void, buflen: gensiods,
+			       timeout: *const gensio_time) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_read_s(io: *const gensio, count: &mut gensiods,
+			  buf: *mut ffi::c_void, buflen: gensiods,
+			  timeout: *const gensio_time) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_read_s_intr(io: *const gensio, count: &mut gensiods,
+			       buf: *mut ffi::c_void, buflen: gensiods,
+			       timeout: *const gensio_time) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
     pub fn gensio_set_read_callback_enable(g: *const gensio,
 					   enabled: ffi::c_int);
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_set_write_callback_enable(g: *const gensio,
+					    enabled: ffi::c_int);
 
     #[allow(improper_ctypes)]
     pub fn str_to_gensio_accepter(s: *const ffi::c_char,

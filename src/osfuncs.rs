@@ -351,7 +351,7 @@ impl Waiter {
     /// Like wait, but if a signal is received, this will return a
     /// GE_INTERRUPTED error.
     pub fn wait_intr(&self, count: u32, timeout: &Duration)
-		-> Result<Duration, i32> {
+		     -> Result<Duration, i32> {
 	let t = raw::gensio_time{ secs: timeout.as_secs() as i64,
 				  nsecs: timeout.subsec_nanos() as i32 };
 	let err = unsafe { raw::gensio_os_funcs_wait_intr(self.o.o, self.w,
