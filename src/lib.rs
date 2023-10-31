@@ -62,8 +62,8 @@ pub const GE_NAME_NET_NOT_UP:		i32 = 42;
 pub const GENSIO_CONTROL_DEPTH_ALL: i32 =	-1;
 pub const GENSIO_CONTROL_DEPTH_FIRST: i32 =	-2;
 
-pub const GENSIO_CONTROL_GET: i32 =	1;
-pub const GENSIO_CONTROL_SET: i32 =	0;
+pub const GENSIO_CONTROL_GET: bool =	true;
+pub const GENSIO_CONTROL_SET: bool =	false;
 
 pub const GENSIO_CONTROL_NODELAY: u32 =			1;
 pub const GENSIO_CONTROL_STREAMS: u32 =			2;
@@ -1430,7 +1430,8 @@ mod tests {
 	let a = new_accepter("tcp,127.0.0.1,0".to_string(), &o, e1.clone())
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
-	let port = match a.control_str(0, true, GENSIO_ACC_CONTROL_LPORT, "") {
+	let port = match a.control_str(0, GENSIO_CONTROL_GET,
+				       GENSIO_ACC_CONTROL_LPORT, "") {
 	    Ok(s) => s,
 	    Err(err) => panic!("Error getting acc laddr {err}")
 	};
@@ -1458,7 +1459,8 @@ mod tests {
 	let a = new_accepter("tcp,127.0.0.1,0".to_string(), &o, e1.clone())
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
-	let port = match a.control_str(0, true, GENSIO_ACC_CONTROL_LPORT, "") {
+	let port = match a.control_str(0, GENSIO_CONTROL_GET,
+				       GENSIO_ACC_CONTROL_LPORT, "") {
 	    Ok(s) => s,
 	    Err(err) => panic!("Error getting acc laddr {err}")
 	};

@@ -661,32 +661,31 @@ mod tests {
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
     }
 
-    struct StopTimer1 {
+    struct StopTimer3 {
 	w: Waiter,
         v: Mutex<u32>,
     }
 
-    static TESTVAL: Mutex<u32> = Mutex::new(0);
-
-    impl TimerStopDoneHandler for StopTimer1 {
+    impl TimerStopDoneHandler for StopTimer3 {
 	fn timer_stopped(&self) {
             let mut v = self.v.lock().unwrap();
-            let v2 = TESTVAL.lock().unwrap();
+            let v2 = TESTVAL3.lock().unwrap();
             assert_eq!(*v, *v2);
             *v = 10;
 	    self.w.wake().expect("Wake failed");
 	}
     }
 
+    static TESTVAL3: Mutex<u32> = Mutex::new(0);
+
     // Stop the timer and wait for it
     #[test]
-    #[serial]
     fn timer_test3() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let s1 = StopTimer1 {
+	let s1 = StopTimer3 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
             v: Mutex::new(1),
 	};
@@ -695,7 +694,7 @@ mod tests {
 	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
 
         {
-            let mut v2 = TESTVAL.lock().unwrap();
+            let mut v2 = TESTVAL3.lock().unwrap();
             *v2 = 1;
         }
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
@@ -708,23 +707,39 @@ mod tests {
         assert_eq!(*vv, 10);
     }
 
+    struct StopTimer4 {
+	w: Waiter,
+        v: Mutex<u32>,
+    }
+
+    impl TimerStopDoneHandler for StopTimer4 {
+	fn timer_stopped(&self) {
+            let mut v = self.v.lock().unwrap();
+            let v2 = TESTVAL4.lock().unwrap();
+            assert_eq!(*v, *v2);
+            *v = 10;
+	    self.w.wake().expect("Wake failed");
+	}
+    }
+
+    static TESTVAL4: Mutex<u32> = Mutex::new(0);
+
     // See that the cleanup works properly on a timer that is being
     // stopped.
     #[test]
-    #[serial]
     fn timer_test4() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let s1 = StopTimer1 {
+	let s1 = StopTimer4 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
             v: Mutex::new(2),
 	};
 	let s: Arc<dyn TimerStopDoneHandler> = Arc::new(s1);
 	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
         {
-            let mut v2 = TESTVAL.lock().unwrap();
+            let mut v2 = TESTVAL4.lock().unwrap();
             *v2 = 2;
         }
 
@@ -741,6 +756,9 @@ mod tests {
             self.w.wake().expect("Wake failed");
         }
     }
+
+    // Note that all the signal handler test functions are required to be
+    // serial because they use proc_setup().
 
     extern "C" {
         fn send_term_self() -> ffi::c_int;
