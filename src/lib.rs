@@ -59,56 +59,56 @@ pub const GE_NAME_SERVER_FAILURE:	i32 = 40;
 pub const GE_NAME_INVALID:		i32 = 41;
 pub const GE_NAME_NET_NOT_UP:		i32 = 42;
 
-pub const GENSIO_CONTROL_DEPTH_ALL: ffi::c_int =	-1;
-pub const GENSIO_CONTROL_DEPTH_FIRST: ffi::c_int =	-2;
+pub const GENSIO_CONTROL_DEPTH_ALL: i32 =	-1;
+pub const GENSIO_CONTROL_DEPTH_FIRST: i32 =	-2;
 
-pub const GENSIO_CONTROL_GET: ffi::c_int =	1;
-pub const GENSIO_CONTROL_SET: ffi::c_int =	0;
+pub const GENSIO_CONTROL_GET: i32 =	1;
+pub const GENSIO_CONTROL_SET: i32 =	0;
 
-pub const GENSIO_CONTROL_NODELAY: ffi::c_uint =			1;
-pub const GENSIO_CONTROL_STREAMS: ffi::c_uint =			2;
-pub const GENSIO_CONTROL_SEND_BREAK: ffi::c_uint =		3;
-pub const GENSIO_CONTROL_GET_PEER_CERT_NAME: ffi::c_uint =	4;
-pub const GENSIO_CONTROL_CERT_AUTH: ffi::c_uint =		5;
-pub const GENSIO_CONTROL_USERNAME: ffi::c_uint =		6;
-pub const GENSIO_CONTROL_SERVICE: ffi::c_uint =			7;
-pub const GENSIO_CONTROL_CERT: ffi::c_uint =			8;
-pub const GENSIO_CONTROL_CERT_FINGERPRINT: ffi::c_uint =	9;
-pub const GENSIO_CONTROL_ENVIRONMENT: ffi::c_uint =		10;
-pub const GENSIO_CONTROL_MAX_WRITE_PACKET: ffi::c_uint =	11;
-pub const GENSIO_CONTROL_ARGS: ffi::c_uint =			12;
-pub const GENSIO_CONTROL_EXIT_CODE: ffi::c_uint =		13;
-pub const GENSIO_CONTROL_WAIT_TASK: ffi::c_uint =		14;
-pub const GENSIO_CONTROL_ADD_MCAST: ffi::c_uint =		15;
-pub const GENSIO_CONTROL_DEL_MCAST: ffi::c_uint =		16;
-pub const GENSIO_CONTROL_LADDR: ffi::c_uint =			17;
-pub const GENSIO_CONTROL_LPORT: ffi::c_uint =			18;
-pub const GENSIO_CONTROL_CLOSE_OUTPUT: ffi::c_uint =		19;
-pub const GENSIO_CONTROL_CONNECT_ADDR_STR: ffi::c_uint =	20;
-pub const GENSIO_CONTROL_RADDR: ffi::c_uint =			21;
-pub const GENSIO_CONTROL_RADDR_BIN: ffi::c_uint =		22;
-pub const GENSIO_CONTROL_REMOTE_ID: ffi::c_uint =		23;
-pub const GENSIO_CONTROL_KILL_TASK: ffi::c_uint =		24;
-pub const GENSIO_CONTROL_MCAST_LOOP: ffi::c_uint =		25;
-pub const GENSIO_CONTROL_MCAST_TTL: ffi::c_uint =		26;
-pub const GENSIO_CONTROL_PASSWORD: ffi::c_uint =		27;
-pub const GENSIO_CONTROL_2FA: ffi::c_uint =			28;
-pub const GENSIO_CONTROL_AUX_DATA: ffi::c_uint =		29;
-pub const GENSIO_CONTROL_REM_AUX_DATA: ffi::c_uint =		30;
-pub const GENSIO_CONTROL_IOD: ffi::c_uint =			31;
-pub const GENSIO_CONTROL_EXTRAINFO: ffi::c_uint =		32;
-pub const GENSIO_CONTROL_ENABLE_OOB: ffi::c_uint =		33;
-pub const GENSIO_CONTROL_WIN_SIZE: ffi::c_uint =		34;
-pub const GENSIO_CONTROL_START_DIRECTORY: ffi::c_uint =		35;
-pub const GENSIO_CONTROL_IN_RATE: ffi::c_uint =			36;
-pub const GENSIO_CONTROL_OUT_RATE: ffi::c_uint =		37;
-pub const GENSIO_CONTROL_IN_BUFSIZE: ffi::c_uint =		38;
-pub const GENSIO_CONTROL_OUT_BUFSIZE: ffi::c_uint =		39;
-pub const GENSIO_CONTROL_IN_NR_CHANS: ffi::c_uint =		40;
-pub const GENSIO_CONTROL_OUT_NR_CHANS: ffi::c_uint =		41;
-pub const GENSIO_CONTROL_IN_FORMAT: ffi::c_uint =		42;
-pub const GENSIO_CONTROL_OUT_FORMAT: ffi::c_uint =		43;
-pub const GENSIO_CONTROL_DRAIN_COUNT: ffi::c_uint =		44;
+pub const GENSIO_CONTROL_NODELAY: u32 =			1;
+pub const GENSIO_CONTROL_STREAMS: u32 =			2;
+pub const GENSIO_CONTROL_SEND_BREAK: u32 =		3;
+pub const GENSIO_CONTROL_GET_PEER_CERT_NAME: u32 =	4;
+pub const GENSIO_CONTROL_CERT_AUTH: u32 =		5;
+pub const GENSIO_CONTROL_USERNAME: u32 =		6;
+pub const GENSIO_CONTROL_SERVICE: u32 =			7;
+pub const GENSIO_CONTROL_CERT: u32 =			8;
+pub const GENSIO_CONTROL_CERT_FINGERPRINT: u32 =	9;
+pub const GENSIO_CONTROL_ENVIRONMENT: u32 =		10;
+pub const GENSIO_CONTROL_MAX_WRITE_PACKET: u32 =	11;
+pub const GENSIO_CONTROL_ARGS: u32 =			12;
+pub const GENSIO_CONTROL_EXIT_CODE: u32 =		13;
+pub const GENSIO_CONTROL_WAIT_TASK: u32 =		14;
+pub const GENSIO_CONTROL_ADD_MCAST: u32 =		15;
+pub const GENSIO_CONTROL_DEL_MCAST: u32 =		16;
+pub const GENSIO_CONTROL_LADDR: u32 =			17;
+pub const GENSIO_CONTROL_LPORT: u32 =			18;
+pub const GENSIO_CONTROL_CLOSE_OUTPUT: u32 =		19;
+pub const GENSIO_CONTROL_CONNECT_ADDR_STR: u32 =	20;
+pub const GENSIO_CONTROL_RADDR: u32 =			21;
+pub const GENSIO_CONTROL_RADDR_BIN: u32 =		22;
+pub const GENSIO_CONTROL_REMOTE_ID: u32 =		23;
+pub const GENSIO_CONTROL_KILL_TASK: u32 =		24;
+pub const GENSIO_CONTROL_MCAST_LOOP: u32 =		25;
+pub const GENSIO_CONTROL_MCAST_TTL: u32 =		26;
+pub const GENSIO_CONTROL_PASSWORD: u32 =		27;
+pub const GENSIO_CONTROL_2FA: u32 =			28;
+pub const GENSIO_CONTROL_AUX_DATA: u32 =		29;
+pub const GENSIO_CONTROL_REM_AUX_DATA: u32 =		30;
+pub const GENSIO_CONTROL_IOD: u32 =			31;
+pub const GENSIO_CONTROL_EXTRAINFO: u32 =		32;
+pub const GENSIO_CONTROL_ENABLE_OOB: u32 =		33;
+pub const GENSIO_CONTROL_WIN_SIZE: u32 =		34;
+pub const GENSIO_CONTROL_START_DIRECTORY: u32 =		35;
+pub const GENSIO_CONTROL_IN_RATE: u32 =			36;
+pub const GENSIO_CONTROL_OUT_RATE: u32 =		37;
+pub const GENSIO_CONTROL_IN_BUFSIZE: u32 =		38;
+pub const GENSIO_CONTROL_OUT_BUFSIZE: u32 =		39;
+pub const GENSIO_CONTROL_IN_NR_CHANS: u32 =		40;
+pub const GENSIO_CONTROL_OUT_NR_CHANS: u32 =		41;
+pub const GENSIO_CONTROL_IN_FORMAT: u32 =		42;
+pub const GENSIO_CONTROL_OUT_FORMAT: u32 =		43;
+pub const GENSIO_CONTROL_DRAIN_COUNT: u32 =		44;
 
 type GensioDS = osfuncs::raw::gensiods;
 
@@ -750,9 +750,9 @@ impl Gensio {
     }
 
 
-    /// Call gensio_control() with the given options.  As much data as can
-    /// be held is stored in data upon return and that total size required
-    /// is returned in Ok().
+    /// Call gensio_control() with the given options.  As much data as
+    /// can be held is stored in data upon return and the required
+    /// size to return all data is returned in Ok().
     pub fn control(&self, depth: i32, get: bool, option: u32,
 		   data: &mut Vec<u8>) -> Result<usize, i32> {
 	let err;
@@ -792,7 +792,7 @@ impl Gensio {
 	    return Ok(data2);
 	}
 	let mut data2 = data.clone();
-	data2.reserve(len + 1);
+	data2.reserve(len + 1); // Add 1 for C string terminator
 	match self.control(depth, get, option, &mut data2) {
 	    Ok(ilen) => len = ilen,
 	    Err(err) => return Err(err)
@@ -939,9 +939,9 @@ pub trait AccepterEvent {
     }
 }
 
-pub const GENSIO_ACC_CONTROL_LADDR: ffi::c_uint = 1;
-pub const GENSIO_ACC_CONTROL_LPORT: ffi::c_uint = 2;
-pub const GENSIO_ACC_CONTROL_TCPDNAME: ffi::c_uint = 3;
+pub const GENSIO_ACC_CONTROL_LADDR: u32 = 1;
+pub const GENSIO_ACC_CONTROL_LPORT: u32 = 2;
+pub const GENSIO_ACC_CONTROL_TCPDNAME: u32 = 3;
 
 pub struct Accepter {
     o: Arc<osfuncs::IOsFuncs>, // Used to keep the os funcs alive.
@@ -1167,8 +1167,8 @@ impl Accepter {
     }
 
     /// Call gensio_acc_control() with the given options.  As much
-    /// data as can be held is stored in data upon return and that
-    /// total size required is returned in Ok().
+    /// data as can be held is stored in data upon return and the
+    /// required size to return all data is returned in Ok().
     pub fn control(&self, depth: i32, get: bool, option: u32,
 		   data: &mut Vec<u8>) -> Result<usize, i32> {
 	let err;
