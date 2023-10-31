@@ -201,6 +201,11 @@ extern "C" {
 					    enabled: ffi::c_int);
 
     #[allow(improper_ctypes)]
+    pub fn gensio_control(g: *const gensio, depth: ffi::c_int, get: ffi::c_int,
+			  option: ffi::c_uint, data: *mut ffi::c_void,
+			  datalen: &mut gensiods) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
     pub fn str_to_gensio_accepter(s: *const ffi::c_char,
 				  o: *const gensio_os_funcs,
 				  cb: gensio_accepter_event,
@@ -225,6 +230,12 @@ extern "C" {
     pub fn gensio_acc_shutdown_s(a: *const gensio_accepter) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
+    pub fn gensio_acc_control(g: *const gensio_accepter, depth: ffi::c_int,
+			      get: ffi::c_int, option: ffi::c_uint,
+			      data: *mut ffi::c_void, datalen: &mut gensiods)
+			      -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
     pub fn gensio_acc_free(a: *const gensio_accepter) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
@@ -242,15 +253,10 @@ extern "C" {
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
-    use serial_test::serial;
     use crate::osfuncs::raw::gensio_time;
 
     use crate::osfuncs::raw::gensio_alloc_os_funcs;
     use crate::osfuncs::raw::gensio_os_funcs_free;
-
-    use crate::osfuncs::raw::gensio_os_proc_data;
-    use crate::osfuncs::raw::gensio_os_proc_setup;
-    use crate::osfuncs::raw::gensio_os_proc_cleanup;
 
     use crate::osfuncs::raw::gensio_waiter;
     use crate::osfuncs::raw::gensio_os_funcs_alloc_waiter;
@@ -318,18 +324,12 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn basic_gensio() {
 	let mut err: ffi::c_int;
 
 	let o: *const gensio_os_funcs = std::ptr::null();
 	unsafe {
 	    err = gensio_alloc_os_funcs(-198234, &o);
-	}
-	let p: *const gensio_os_proc_data = std::ptr::null();
-	assert_eq!(err, 0);
-	unsafe {
-	    err = gensio_os_proc_setup(o, &p);
 	}
 	assert_eq!(err, 0);
 	let w;
@@ -386,7 +386,6 @@ mod tests {
 	unsafe {
 	    gensio_free(d.g);
 	    gensio_os_funcs_free_waiter(d.o, d.w);
-	    gensio_os_proc_cleanup(p);
 	    gensio_os_funcs_free(d.o);
 	}
     }

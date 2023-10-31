@@ -615,10 +615,8 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn wait_test() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
-	o.proc_setup().expect("Couldn't set up OsFuncs");
 	let w = o.new_waiter().expect("Couldn't allocate Waiter");
 
 	drop(o);
@@ -636,10 +634,8 @@ mod tests {
 
     // Normal timer operation, wait for it to time out.
     #[test]
-    #[serial]
     fn timer_test() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
-	o.proc_setup().expect("Couldn't set up OsFuncs");
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -655,10 +651,8 @@ mod tests {
 
     // See that the cleanup happens on a running timer
     #[test]
-    #[serial]
     fn timer_test2() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
-	o.proc_setup().expect("Couldn't set up OsFuncs");
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -689,7 +683,6 @@ mod tests {
     #[serial]
     fn timer_test3() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
-	o.proc_setup().expect("Couldn't set up OsFuncs");
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -721,7 +714,6 @@ mod tests {
     #[serial]
     fn timer_test4() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
-	o.proc_setup().expect("Couldn't set up OsFuncs");
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -758,7 +750,7 @@ mod tests {
     #[serial]
     fn term_test() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
-	o.proc_setup().expect("Couldn't set up OsFuncs");
+	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(TermHnd {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -798,7 +790,7 @@ mod tests {
     #[serial]
     fn hup_test() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
-	o.proc_setup().expect("Couldn't set up OsFuncs");
+	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(HupHnd {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -835,7 +827,7 @@ mod tests {
     #[serial]
     fn winsize_test() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
-	o.proc_setup().expect("Couldn't set up OsFuncs");
+	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(WinsizeHnd {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -880,10 +872,8 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn runner_test() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
-	o.proc_setup().expect("Couldn't set up OsFuncs");
 	let h = Arc::new(HandleRunner1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});

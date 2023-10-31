@@ -59,6 +59,57 @@ pub const GE_NAME_SERVER_FAILURE:	i32 = 40;
 pub const GE_NAME_INVALID:		i32 = 41;
 pub const GE_NAME_NET_NOT_UP:		i32 = 42;
 
+pub const GENSIO_CONTROL_DEPTH_ALL: ffi::c_int =	-1;
+pub const GENSIO_CONTROL_DEPTH_FIRST: ffi::c_int =	-2;
+
+pub const GENSIO_CONTROL_GET: ffi::c_int =	1;
+pub const GENSIO_CONTROL_SET: ffi::c_int =	0;
+
+pub const GENSIO_CONTROL_NODELAY: ffi::c_uint =			1;
+pub const GENSIO_CONTROL_STREAMS: ffi::c_uint =			2;
+pub const GENSIO_CONTROL_SEND_BREAK: ffi::c_uint =		3;
+pub const GENSIO_CONTROL_GET_PEER_CERT_NAME: ffi::c_uint =	4;
+pub const GENSIO_CONTROL_CERT_AUTH: ffi::c_uint =		5;
+pub const GENSIO_CONTROL_USERNAME: ffi::c_uint =		6;
+pub const GENSIO_CONTROL_SERVICE: ffi::c_uint =			7;
+pub const GENSIO_CONTROL_CERT: ffi::c_uint =			8;
+pub const GENSIO_CONTROL_CERT_FINGERPRINT: ffi::c_uint =	9;
+pub const GENSIO_CONTROL_ENVIRONMENT: ffi::c_uint =		10;
+pub const GENSIO_CONTROL_MAX_WRITE_PACKET: ffi::c_uint =	11;
+pub const GENSIO_CONTROL_ARGS: ffi::c_uint =			12;
+pub const GENSIO_CONTROL_EXIT_CODE: ffi::c_uint =		13;
+pub const GENSIO_CONTROL_WAIT_TASK: ffi::c_uint =		14;
+pub const GENSIO_CONTROL_ADD_MCAST: ffi::c_uint =		15;
+pub const GENSIO_CONTROL_DEL_MCAST: ffi::c_uint =		16;
+pub const GENSIO_CONTROL_LADDR: ffi::c_uint =			17;
+pub const GENSIO_CONTROL_LPORT: ffi::c_uint =			18;
+pub const GENSIO_CONTROL_CLOSE_OUTPUT: ffi::c_uint =		19;
+pub const GENSIO_CONTROL_CONNECT_ADDR_STR: ffi::c_uint =	20;
+pub const GENSIO_CONTROL_RADDR: ffi::c_uint =			21;
+pub const GENSIO_CONTROL_RADDR_BIN: ffi::c_uint =		22;
+pub const GENSIO_CONTROL_REMOTE_ID: ffi::c_uint =		23;
+pub const GENSIO_CONTROL_KILL_TASK: ffi::c_uint =		24;
+pub const GENSIO_CONTROL_MCAST_LOOP: ffi::c_uint =		25;
+pub const GENSIO_CONTROL_MCAST_TTL: ffi::c_uint =		26;
+pub const GENSIO_CONTROL_PASSWORD: ffi::c_uint =		27;
+pub const GENSIO_CONTROL_2FA: ffi::c_uint =			28;
+pub const GENSIO_CONTROL_AUX_DATA: ffi::c_uint =		29;
+pub const GENSIO_CONTROL_REM_AUX_DATA: ffi::c_uint =		30;
+pub const GENSIO_CONTROL_IOD: ffi::c_uint =			31;
+pub const GENSIO_CONTROL_EXTRAINFO: ffi::c_uint =		32;
+pub const GENSIO_CONTROL_ENABLE_OOB: ffi::c_uint =		33;
+pub const GENSIO_CONTROL_WIN_SIZE: ffi::c_uint =		34;
+pub const GENSIO_CONTROL_START_DIRECTORY: ffi::c_uint =		35;
+pub const GENSIO_CONTROL_IN_RATE: ffi::c_uint =			36;
+pub const GENSIO_CONTROL_OUT_RATE: ffi::c_uint =		37;
+pub const GENSIO_CONTROL_IN_BUFSIZE: ffi::c_uint =		38;
+pub const GENSIO_CONTROL_OUT_BUFSIZE: ffi::c_uint =		39;
+pub const GENSIO_CONTROL_IN_NR_CHANS: ffi::c_uint =		40;
+pub const GENSIO_CONTROL_OUT_NR_CHANS: ffi::c_uint =		41;
+pub const GENSIO_CONTROL_IN_FORMAT: ffi::c_uint =		42;
+pub const GENSIO_CONTROL_OUT_FORMAT: ffi::c_uint =		43;
+pub const GENSIO_CONTROL_DRAIN_COUNT: ffi::c_uint =		44;
+
 type GensioDS = osfuncs::raw::gensiods;
 
 extern "C" {
@@ -698,6 +749,72 @@ impl Gensio {
 	}
     }
 
+
+    /// Call gensio_control() with the given options.  As much data as can
+    /// be held is stored in data upon return and that total size required
+    /// is returned in Ok().
+    pub fn control(&self, depth: i32, get: bool, option: u32,
+		   data: &mut Vec<u8>) -> Result<usize, i32> {
+	let err;
+	let mut len: GensioDS;
+	unsafe {
+	    len = data.capacity() as GensioDS;
+	    if len == 0 {
+		// If we don't have at least one byte, as_mut_ptr()
+		// will return null.
+		data.push(0);
+		len = 1;
+	    }
+	    err = raw::gensio_control(self.g, depth, get as i32, option,
+				      data.as_mut_ptr() as *mut ffi::c_void,
+				      &mut len);
+	}
+	if err == 0 {
+	    if len < data.capacity() as GensioDS {
+		unsafe {data.set_len(len as usize); }
+	    }
+	    Ok(len as usize)
+	} else {
+	    Err(err)
+	}
+    }
+
+    /// Call gensio_control() and return a vector holding the result.
+    pub fn control_resize(&self, depth: i32, get: bool, option: u32,
+			  data: &Vec<u8>) -> Result<Vec<u8>, i32> {
+	let mut len: usize;
+	let mut data2 = data.clone();
+	match self.control(depth, get, option, &mut data2) {
+	    Ok(ilen) => len = ilen,
+	    Err(err) => return Err(err)
+	}
+	if len <= data2.capacity() {
+	    return Ok(data2);
+	}
+	let mut data2 = data.clone();
+	data2.reserve(len + 1);
+	match self.control(depth, get, option, &mut data2) {
+	    Ok(ilen) => len = ilen,
+	    Err(err) => return Err(err)
+	}
+	if len >= data2.capacity() {
+	    Err(GE_TOOBIG)
+	} else {
+	    Ok(data2)
+	}
+    }
+
+    /// Call gensio_control(), passing in the given string.  The result
+    /// string is returned in Ok().
+    pub fn control_str(&self, depth: i32, get: bool, option: u32, val: &str)
+		       -> Result<String, i32> {
+	let mut valv = val.as_bytes().to_vec();
+	match self.control_resize(depth, get, option, &mut valv) {
+	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
+	    Err(err) => Err(err)
+	}
+    }
+
     pub fn get_type(&self, depth: u32) -> String {
 	let s;
 	unsafe {
@@ -821,6 +938,10 @@ pub trait AccepterEvent {
 	(GE_NOTSUP, None)
     }
 }
+
+pub const GENSIO_ACC_CONTROL_LADDR: ffi::c_uint = 1;
+pub const GENSIO_ACC_CONTROL_LPORT: ffi::c_uint = 2;
+pub const GENSIO_ACC_CONTROL_TCPDNAME: ffi::c_uint = 3;
 
 pub struct Accepter {
     o: Arc<osfuncs::IOsFuncs>, // Used to keep the os funcs alive.
@@ -1044,6 +1165,71 @@ impl Accepter {
 	    }
 	}
     }
+
+    /// Call gensio_acc_control() with the given options.  As much
+    /// data as can be held is stored in data upon return and that
+    /// total size required is returned in Ok().
+    pub fn control(&self, depth: i32, get: bool, option: u32,
+		   data: &mut Vec<u8>) -> Result<usize, i32> {
+	let err;
+	let mut len: GensioDS;
+	unsafe {
+	    len = data.capacity() as GensioDS;
+	    if len == 0 {
+		// If we don't have at least one byte, as_mut_ptr()
+		// will return null.
+		data.push(0);
+		len = data.capacity() as GensioDS;
+	    }
+	    err = raw::gensio_acc_control(self.a, depth, get as i32, option,
+					  data.as_mut_ptr() as *mut ffi::c_void,
+					  &mut len);
+	}
+	if err == 0 {
+	    if len < data.capacity() as GensioDS {
+		unsafe {data.set_len(len as usize); }
+	    }
+	    Ok(len as usize)
+	} else {
+	    Err(err)
+	}
+    }
+
+    /// Call gensio_acc_control() and return a vector holding the result.
+    pub fn control_resize(&self, depth: i32, get: bool, option: u32,
+			  data: &Vec<u8>) -> Result<Vec<u8>, i32> {
+	let mut len: usize;
+	let mut data2 = data.clone();
+	match self.control(depth, get, option, &mut data2) {
+	    Ok(ilen) => len = ilen,
+	    Err(err) => return Err(err)
+	}
+	if len <= data2.capacity() {
+	    return Ok(data2);
+	}
+	let mut data2 = data.clone();
+	data2.reserve(len + 1);
+	match self.control(depth, get, option, &mut data2) {
+	    Ok(ilen) => len = ilen,
+	    Err(err) => return Err(err)
+	}
+	if len >= data2.capacity() {
+	    Err(GE_TOOBIG)
+	} else {
+	    Ok(data2)
+	}
+    }
+
+    /// Call gensio_acc_control(), passing in the given string.  The result
+    /// string is returned in Ok().
+    pub fn control_str(&self, depth: i32, get: bool, option: u32, val: &str)
+		       -> Result<String, i32> {
+	let mut valv = val.as_bytes().to_vec();
+	match self.control_resize(depth, get, option, &mut valv) {
+	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
+	    Err(err) => Err(err)
+	}
+    }
 }
 
 impl Drop for Accepter {
@@ -1064,7 +1250,6 @@ impl Drop for Accepter {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use serial_test::serial;
     use std::sync::Mutex;
     use super::*;
 
@@ -1113,11 +1298,9 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn basic_gensio() {
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
-	o.proc_setup().expect("Couldn't setup proc");
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let e = Arc::new(EvStruct { w: w });
 	let g = new("echo".to_string(), &o, e.clone())
@@ -1215,11 +1398,9 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn parmerr() {
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
-	o.proc_setup().expect("Couldn't setup proc");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
@@ -1239,24 +1420,27 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn acc_conn1() {
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
-	o.proc_setup().expect("Couldn't setup proc");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e1 = Arc::new(AccEvent { w: w, d: d });
-	let a = new_accepter("tcp,127.0.0.1,1234".to_string(), &o, e1.clone())
+	let a = new_accepter("tcp,127.0.0.1,0".to_string(), &o, e1.clone())
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
+	let port = match a.control_str(0, true, GENSIO_ACC_CONTROL_LPORT, "") {
+	    Ok(s) => s,
+	    Err(err) => panic!("Error getting acc laddr {err}")
+	};
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
-	let g = new("tcp,127.0.0.1,1234".to_string(), &o, e2.clone()).
-	    expect("Couldn't alocate gensio");
+	let g = new(format!("tcp,127.0.0.1,{port}").to_string(),
+		    &o, e2.clone())
+	    .expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
 	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
@@ -1264,23 +1448,26 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn acc_conn2() {
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
-	o.proc_setup().expect("Couldn't setup proc");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e1 = Arc::new(AccEvent { w: w, d: d });
-	let a = new_accepter("tcp,127.0.0.1,1234".to_string(), &o, e1.clone())
+	let a = new_accepter("tcp,127.0.0.1,0".to_string(), &o, e1.clone())
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
+	let port = match a.control_str(0, true, GENSIO_ACC_CONTROL_LPORT, "") {
+	    Ok(s) => s,
+	    Err(err) => panic!("Error getting acc laddr {err}")
+	};
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
-	let g = new("tcp,127.0.0.1,1234".to_string(), &o, e2.clone()).
+	let g = new(format!("tcp,127.0.0.1,{port}").to_string(),
+		    &o, e2.clone()).
 	    expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
