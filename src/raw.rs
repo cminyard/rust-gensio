@@ -162,6 +162,9 @@ extern "C" {
     pub fn gensio_is_mux(io: *const gensio) -> i32;
 
     #[allow(improper_ctypes)]
+    pub fn gensio_is_serial(io: *const gensio) -> i32;
+
+    #[allow(improper_ctypes)]
     pub fn gensio_set_sync(io: *const gensio) -> i32;
 
     #[allow(improper_ctypes)]
@@ -228,6 +231,21 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     pub fn gensio_acc_shutdown_s(a: *const gensio_accepter) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_is_reliable(a: *const gensio_accepter) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_is_packet(a: *const gensio_accepter) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_is_message(a: *const gensio_accepter) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_is_mux(a: *const gensio_accepter) -> i32;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acc_is_serial(a: *const gensio_accepter) -> i32;
 
     #[allow(improper_ctypes)]
     pub fn gensio_acc_control(g: *const gensio_accepter, depth: ffi::c_int,

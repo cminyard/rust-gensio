@@ -153,7 +153,7 @@ extern "C" fn op_done_err(_io: *const raw::gensio, err: ffi::c_int,
 /// Close callbacks will need to implement this trait.
 pub trait OpDone {
     /// Report that the operation (close) has completed.
-    fn done(&self); // FIXME = make this &mut
+    fn done(&self);
 }
 
 struct OpDoneData {
@@ -867,6 +867,12 @@ impl Gensio {
 	}
     }
 
+    pub fn is_serial(&self) -> bool {
+	unsafe {
+	    raw::gensio_is_serial(self.g) != 0
+	}
+    }
+
     pub fn set_sync(&self) -> Result<(), i32> {
 	let err = unsafe { raw::gensio_set_sync(self.g) };
 	match err {
@@ -1125,7 +1131,7 @@ pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
 /// Shutdown callbacks will need to implement this trait.
 pub trait AccepterOpDone {
     /// Report that the operation (close) has completed.
-    fn done(&self); // FIXME = make this &mut
+    fn done(&self);
 }
 
 struct AccepterOpDoneData {
@@ -1228,6 +1234,36 @@ impl Accepter {
 	match self.control_resize(depth, get, option, &mut valv) {
 	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
 	    Err(err) => Err(err)
+	}
+    }
+
+    pub fn is_reliable(&self) -> bool {
+	unsafe {
+	    raw::gensio_acc_is_reliable(self.a) != 0
+	}
+    }
+
+    pub fn is_packet(&self) -> bool {
+	unsafe {
+	    raw::gensio_acc_is_packet(self.a) != 0
+	}
+    }
+
+    pub fn is_message(&self) -> bool {
+	unsafe {
+	    raw::gensio_acc_is_message(self.a) != 0
+	}
+    }
+
+    pub fn is_mux(&self) -> bool {
+	unsafe {
+	    raw::gensio_acc_is_mux(self.a) != 0
+	}
+    }
+
+    pub fn is_serial(&self) -> bool {
+	unsafe {
+	    raw::gensio_acc_is_serial(self.a) != 0
 	}
     }
 }
