@@ -16,6 +16,7 @@ use std::time::Duration;
 pub mod osfuncs;
 pub mod raw;
 
+/// gensio error values
 pub const GE_NOERR:			i32 = 0;
 pub const GE_NOMEM:			i32 = 1;
 pub const GE_NOTSUP:			i32 = 2;
@@ -59,12 +60,15 @@ pub const GE_NAME_SERVER_FAILURE:	i32 = 40;
 pub const GE_NAME_INVALID:		i32 = 41;
 pub const GE_NAME_NET_NOT_UP:		i32 = 42;
 
+/// Values for the first parameter of control functions.
 pub const GENSIO_CONTROL_DEPTH_ALL: i32 =	-1;
 pub const GENSIO_CONTROL_DEPTH_FIRST: i32 =	-2;
 
+/// Values for the second parameter of control functions.
 pub const GENSIO_CONTROL_GET: bool =	true;
 pub const GENSIO_CONTROL_SET: bool =	false;
 
+/// Values for the third parameter of control functions.
 pub const GENSIO_CONTROL_NODELAY: u32 =			1;
 pub const GENSIO_CONTROL_STREAMS: u32 =			2;
 pub const GENSIO_CONTROL_SEND_BREAK: u32 =		3;
