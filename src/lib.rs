@@ -109,6 +109,25 @@ pub const GENSIO_CONTROL_OUT_NR_CHANS: u32 =		41;
 pub const GENSIO_CONTROL_IN_FORMAT: u32 =		42;
 pub const GENSIO_CONTROL_OUT_FORMAT: u32 =		43;
 pub const GENSIO_CONTROL_DRAIN_COUNT: u32 =		44;
+pub const GENSIO_CONTROL_SER_MODEMSTATE: u32 =		45;
+pub const GENSIO_CONTROL_SER_FLOWCONTROL_STATE: u32 =	46;
+pub const GENSIO_CONTROL_SER_FLUSH: u32 =		47;
+pub const GENSIO_CONTROL_SER_SEND_BREAK: u32 =		48;
+pub const GENSIO_CONTROL_SER_LINESTATE: u32 =		49;
+
+pub const GENSIO_ACONTROL_SER_BAUD: u32 =		1000;
+pub const GENSIO_ACONTROL_SER_DATASIZE: u32 =		1001;
+pub const GENSIO_ACONTROL_SER_PARITY: u32 =		1002;
+pub const GENSIO_ACONTROL_SER_STOPBITS: u32 =		1003;
+pub const GENSIO_ACONTROL_SER_FLOWCONTROL: u32 =	1004;
+pub const GENSIO_ACONTROL_SER_IFLOWCONTROL: u32 =	1005;
+pub const GENSIO_ACONTROL_SER_SBREAK: u32 =		1006;
+pub const GENSIO_ACONTROL_SER_DTR: u32 =		1007;
+pub const GENSIO_ACONTROL_SER_RTS: u32 =		1008;
+pub const GENSIO_ACONTROL_SER_CTS: u32 =		1009;
+pub const GENSIO_ACONTROL_SER_DCD_DSR: u32 =		1010;
+pub const GENSIO_ACONTROL_SER_RI: u32 =			1011;
+pub const GENSIO_ACONTROL_SER_SIGNATURE: u32 =		1012;
 
 type GensioDS = osfuncs::raw::gensiods;
 
@@ -125,7 +144,7 @@ pub fn printfit(s: &str) {
 
 /// Open callbacks will need to implement this trait.
 pub trait OpDoneErr {
-    /// Report an error on th eoperation.  Unlike most other gensio
+    /// Report an error on the operation.  Unlike most other gensio
     /// interfaces, which pass the error in the done() method, the
     /// error report is done separately here.
     fn done_err(&self, err: i32);
@@ -136,6 +155,38 @@ pub trait OpDoneErr {
 
 struct OpDoneErrData {
     cb: Arc<dyn OpDoneErr>
+}
+
+/// Acontrol callbacks will need to implement this trait.
+pub trait ControlDone {
+    /// Report an error on the operation.  Unlike most other gensio
+    /// interfaces, which pass the error in the done() method, the
+    /// error report is done separately here.
+    fn done_err(&self, err: i32);
+
+    /// Report that the operation (Acontrol) has completed.
+    fn done(&self, buf: &[u8]);
+}
+
+struct ControlDoneData {
+    cb: Arc<dyn ControlDone>
+}
+
+extern "C" fn control_done(_io: *const raw::gensio,
+			   err: ffi::c_int,
+			   buf: *const ffi::c_void,
+			   len: GensioDS,
+			   user_data: *mut ffi::c_void) {
+    let d = user_data as *mut ControlDoneData;
+    let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
+    let data = buf as *const u8;
+    let data = unsafe {
+	std::slice::from_raw_parts(data, len as usize)
+    };
+    match err {
+	0 => d.cb.done_err(err),
+	_ => d.cb.done(data)
+    }
 }
 
 extern "C" fn op_done_err(_io: *const raw::gensio, err: ffi::c_int,
@@ -226,7 +277,66 @@ pub trait Event {
     fn request_2fa(&self) -> (i32, Option<&[u8]>) {
 	(GE_NOTSUP, None)
     }
+
+    fn win_size(&self, _height: u32, _width: u32) { }
+
+    fn modemstate(&self, _state: u32) { }
+    fn linestate(&self, _state: u32) { }
+    fn flow_state(&self, _state: bool) { }
+    fn sync(&self) { }
+    fn signature(&self, _data: &[u8]) { }
+    fn flush(&self, _val: u32) { }
+    fn baud(&self, _speed: u32) { }
+    fn datasize(&self, _size: u32) { }
+    fn parity(&self, _par: u32) { }
+    fn stopbits(&self, _bits: u32) { }
+    fn flowcontrol(&self, _flow: u32) { }
+    fn iflowcontrol(&self, _flow: u32) { }
+    fn sbreak(&self, _sbreak: u32) { }
+    fn dtr(&self, _dtr: u32) { }
+    fn rts(&self, _rts: u32) { }
+    fn modemstate_mask(&self, _state: u32) { }
+    fn linestate_mask(&self, _state: u32) { }
 }
+
+/// Values for linestate and linestate_mask callbacks.
+pub const GENSIO_SER_LINESTATE_DATA_READY: u32 = 	1 << 0;
+pub const GENSIO_SER_LINESTATE_OVERRUN_ERR: u32 =	1 << 1;
+pub const GENSIO_SER_LINESTATE_PARITY_ERR: u32 = 	1 << 2;
+pub const GENSIO_SER_LINESTATE_FRAMING_ERR: u32 =	1 << 3;
+pub const GENSIO_SER_LINESTATE_BREAK: u32 =		1 << 4;
+pub const GENSIO_SER_LINESTATE_XMIT_HOLD_EMPTY: u32 =	1 << 5;
+pub const GENSIO_SER_LINESTATE_XMIT_SHIFT_EMPTY: u32 =	1 << 6;
+pub const GENSIO_SER_LINESTATE_TIMEOUT_ERR: u32 =	1 << 7;
+
+/// Values for modemstate and modemstate_mask callbacks.
+pub const GENSIO_SER_MODEMSTATE_CTS_CHANGED: u32 =	1 << 0;
+pub const GENSIO_SER_MODEMSTATE_DSR_CHANGED: u32 =	1 << 1;
+pub const GENSIO_SER_MODEMSTATE_RI_CHANGED: u32 =	1 << 2;
+pub const GENSIO_SER_MODEMSTATE_CD_CHANGED: u32 =	1 << 3;
+pub const GENSIO_SER_MODEMSTATE_CTS: u32 =		1 << 4;
+pub const GENSIO_SER_MODEMSTATE_DSR: u32 =		1 << 5;
+pub const GENSIO_SER_MODEMSTATE_RI: u32 =		1 << 6;
+pub const GENSIO_SER_MODEMSTATE_CD: u32 =		1 << 7;
+
+/// Values for parity callback.
+pub const GENSIO_SER_PARITY_NONE: u32 = 1;
+pub const GENSIO_SER_PARITY_ODD: u32 = 2;
+pub const GENSIO_SER_PARITY_EVEN: u32 = 3;
+pub const GENSIO_SER_PARITY_MARK: u32 = 4;
+pub const GENSIO_SER_PARITY_SPACE: u32 = 5;
+
+/// Values for flowcontrol and iflowcontrol callbacks.
+pub const GENSIO_SER_FLOWCONTROL_NONE: u32 = 1;
+pub const GENSIO_SER_FLOWCONTROL_XON_XOFF: u32 = 2;
+pub const GENSIO_SER_FLOWCONTROL_RTS_CTS: u32 = 3;
+pub const GENSIO_SER_FLOWCONTROL_DCD: u32 = 4;
+pub const GENSIO_SER_FLOWCONTROL_DTR: u32 = 5;
+pub const GENSIO_SER_FLOWCONTROL_DSR: u32 = 6;
+
+/// Values for sbreak, dtr, and rts callbacks.
+pub const GENSIO_SER_ON: u32 = 1;
+pub const GENSIO_SER_OFF: u32 = 2;
 
 /// A gensio
 pub struct Gensio {
@@ -316,7 +426,7 @@ extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 {
     let g = user_data as *mut Gensio;
 
-    let err;
+    let mut err = 0;
     match event {
 	raw::GENSIO_EVENT_LOG => {
 	    let s = unsafe { raw::gensio_loginfo_to_str(buf) };
@@ -459,6 +569,105 @@ extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    };
 	    err = unsafe { (*g).cb.verify_2fa(data) };
 	}
+	raw::GENSIO_EVENT_WIN_SIZE => {
+	    let data = buf as *mut u8;
+	    let data = unsafe {
+		Vec::from_raw_parts(data, *buflen as usize, *buflen as usize)
+	    };
+	    let str = String::from_utf8(data).unwrap();
+	    let str: Vec<&str> = str.split(":").collect();
+	    if str.len() >= 2 {
+		let height: u32 = str[0].parse().unwrap();
+		let width: u32 = str[1].parse().unwrap();
+		unsafe { (*g).cb.win_size(height, width); }
+	    }
+	}
+	raw::GENSIO_EVENT_SER_MODEMSTATE => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.modemstate(data); }
+	}
+	raw::GENSIO_EVENT_SER_LINESTATE => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.linestate(data); }
+	}
+	raw::GENSIO_EVENT_SER_MODEMSTATE_MASK => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.modemstate_mask(data); }
+	}
+	raw::GENSIO_EVENT_SER_LINESTATE_MASK => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.linestate_mask(data); }
+	}
+	raw::GENSIO_EVENT_SER_SIGNATURE => {
+	    let data = buf as *const u8;
+	    let data = unsafe {
+		std::slice::from_raw_parts(data, *buflen as usize)
+	    };
+	    unsafe { (*g).cb.signature(data); }
+	}
+	raw::GENSIO_EVENT_SER_FLOW_STATE => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    let data = data == 1;
+	    unsafe { (*g).cb.flow_state(data); }
+	}
+	raw::GENSIO_EVENT_SER_FLUSH => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.flush(data); }
+	}
+	raw::GENSIO_EVENT_SER_SYNC => {
+	    unsafe { (*g).cb.sync(); }
+	}
+	raw::GENSIO_EVENT_SER_BAUD => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.baud(data); }
+	}
+	raw::GENSIO_EVENT_SER_DATASIZE => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.datasize(data); }
+	}
+	raw::GENSIO_EVENT_SER_PARITY => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.parity(data); }
+	}
+	raw::GENSIO_EVENT_SER_STOPBITS => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.stopbits(data); }
+	}
+	raw::GENSIO_EVENT_SER_FLOWCONTROL => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.flowcontrol(data); }
+	}
+	raw::GENSIO_EVENT_SER_IFLOWCONTROL => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.iflowcontrol(data); }
+	}
+	raw::GENSIO_EVENT_SER_SBREAK => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.sbreak(data); }
+	}
+	raw::GENSIO_EVENT_SER_DTR => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.dtr(data); }
+	}
+	raw::GENSIO_EVENT_SER_RTS => {
+	    let data = buf as *const ffi::c_uint;
+	    let data = unsafe { *data } as u32;
+	    unsafe { (*g).cb.rts(data); }
+	}
 	_ => err = GE_NOTSUP
     }
     err
@@ -500,6 +709,22 @@ pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
     };
     let _dt = unsafe {Box::from_raw(dt) }; // Free our original box
     rv
+}
+
+fn duration_to_gensio_time(t: &mut osfuncs::raw::gensio_time,
+			   time: Option<&Duration>)
+			   -> *const osfuncs::raw::gensio_time {
+    match time {
+	None => {
+	    std::ptr::null()
+	}
+	Some(gt) => {
+	    *t = osfuncs::raw::gensio_time{
+		secs: gt.as_secs() as i64,
+		nsecs: gt.subsec_nanos() as i32 };
+	    &*t
+	}
+    }
 }
 
 impl Gensio {
@@ -608,19 +833,9 @@ impl Gensio {
     /// returned.
     pub fn write_s(&self, data: &[u8], timeout: Option<&Duration>)
 		   -> Result<u64, i32> {
-	let t;
-	let tptr: *const osfuncs::raw::gensio_time = match timeout {
-	    None => {
-		std::ptr::null()
-	    }
-	    Some(gt) => {
-		t = osfuncs::raw::gensio_time{
-		    secs: gt.as_secs() as i64,
-		    nsecs: gt.subsec_nanos() as i32 };
-		&t
-	    }
-	};
-
+	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
+	let tptr: *const osfuncs::raw::gensio_time
+	    = duration_to_gensio_time(&mut t, timeout);
 	let mut count: GensioDS = 0;
 
 	let err = unsafe {
@@ -639,19 +854,9 @@ impl Gensio {
     /// failure an error code is returned.
     pub fn write_s_intr(&self, data: &[u8], timeout: Option<&Duration>)
 			-> Result<u64, i32> {
-	let t;
-	let tptr: *const osfuncs::raw::gensio_time = match timeout {
-	    None => {
-		std::ptr::null()
-	    }
-	    Some(gt) => {
-		t = osfuncs::raw::gensio_time{
-		    secs: gt.as_secs() as i64,
-		    nsecs: gt.subsec_nanos() as i32 };
-		&t
-	    }
-	};
-
+	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
+	let tptr: *const osfuncs::raw::gensio_time
+	    = duration_to_gensio_time(&mut t, timeout);
 	let mut count: GensioDS = 0;
 
 	let err = unsafe {
@@ -670,19 +875,9 @@ impl Gensio {
     /// returned.
     pub fn read_s(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
 		  -> Result<u64, i32> {
-	let t;
-	let tptr: *const osfuncs::raw::gensio_time = match timeout {
-	    None => {
-		std::ptr::null()
-	    }
-	    Some(gt) => {
-		t = osfuncs::raw::gensio_time{
-		    secs: gt.as_secs() as i64,
-		    nsecs: gt.subsec_nanos() as i32 };
-		&t
-	    }
-	};
-
+	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
+	let tptr: *const osfuncs::raw::gensio_time
+	    = duration_to_gensio_time(&mut t, timeout);
 	let mut count: GensioDS = 0;
 
 	let err = unsafe {
@@ -704,19 +899,9 @@ impl Gensio {
     /// returned.
     pub fn read_s_intr(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
 		  -> Result<u64, i32> {
-	let t;
-	let tptr: *const osfuncs::raw::gensio_time = match timeout {
-	    None => {
-		std::ptr::null()
-	    }
-	    Some(gt) => {
-		t = osfuncs::raw::gensio_time{
-		    secs: gt.as_secs() as i64,
-		    nsecs: gt.subsec_nanos() as i32 };
-		&t
-	    }
-	};
-
+	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
+	let tptr: *const osfuncs::raw::gensio_time
+	    = duration_to_gensio_time(&mut t, timeout);
 	let mut count: GensioDS = 0;
 
 	let err = unsafe {
@@ -768,6 +953,98 @@ impl Gensio {
 	    err = raw::gensio_control(self.g, depth, get as i32, option,
 				      data.as_mut_ptr() as *mut ffi::c_void,
 				      &mut len);
+	}
+	if err == 0 {
+	    if len < data.capacity() as GensioDS {
+		unsafe {data.set_len(len as usize); }
+	    }
+	    Ok(len as usize)
+	} else {
+	    Err(err)
+	}
+    }
+
+    /// Call gensio_acontrol with the given options.
+    pub fn acontrol(&self, depth: i32, get: bool, option: u32,
+		    data: &mut Vec<u8>, done: Arc<dyn ControlDone>,
+		    timeout: Option<&Duration>)
+		    -> Result<(), i32> {
+	let d = Box::new(ControlDoneData { cb : done });
+	let d = Box::into_raw(d);
+	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
+	let tptr: *const osfuncs::raw::gensio_time
+	    = duration_to_gensio_time(&mut t, timeout);
+	let get = match get { false => 0, true => 1 };
+	let err = unsafe {
+	    raw::gensio_acontrol(self.g, depth, get, option,
+				 data.as_ptr() as *const ffi::c_void,
+				 data.capacity() as GensioDS,
+				 control_done, d as *mut ffi::c_void, tptr)
+	};
+	match err {
+	    0 => Ok(()),
+	    _ => {
+		unsafe { drop(Box::from_raw(d)); } // Free the data
+		Err(err)
+	    }
+	}
+    }
+
+    /// Call gensio_acontrol_s() with the given options.  As much data as
+    /// can be held is stored in data upon return and the required
+    /// size to return all data is returned in Ok().
+    pub fn acontrol_s(&self, depth: i32, get: bool, option: u32,
+		      data: &mut Vec<u8>,
+		      timeout: Option<&Duration>) -> Result<usize, i32> {
+	let err;
+	let mut len: GensioDS;
+	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
+	let tptr: *const osfuncs::raw::gensio_time
+	    = duration_to_gensio_time(&mut t, timeout);
+	unsafe {
+	    len = data.capacity() as GensioDS;
+	    if len == 0 {
+		// If we don't have at least one byte, as_mut_ptr()
+		// will return null.
+		data.push(0);
+		len = 1;
+	    }
+	    err = raw::gensio_acontrol_s(self.g, depth, get as i32, option,
+					 data.as_mut_ptr() as *mut ffi::c_void,
+					 &mut len, tptr);
+	}
+	if err == 0 {
+	    if len < data.capacity() as GensioDS {
+		unsafe {data.set_len(len as usize); }
+	    }
+	    Ok(len as usize)
+	} else {
+	    Err(err)
+	}
+    }
+
+    /// Call gensio_acontrol_s() with the given options.  As much data as
+    /// can be held is stored in data upon return and the required
+    /// size to return all data is returned in Ok().
+    pub fn acontrol_s_intr(&self, depth: i32, get: bool, option: u32,
+			   data: &mut Vec<u8>,
+			   timeout: Option<&Duration>) -> Result<usize, i32> {
+	let err;
+	let mut len: GensioDS;
+	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
+	let tptr: *const osfuncs::raw::gensio_time
+	    = duration_to_gensio_time(&mut t, timeout);
+	unsafe {
+	    len = data.capacity() as GensioDS;
+	    if len == 0 {
+		// If we don't have at least one byte, as_mut_ptr()
+		// will return null.
+		data.push(0);
+		len = 1;
+	    }
+	    err = raw::gensio_acontrol_s_intr(self.g, depth, get as i32, option,
+					 data.as_mut_ptr() as *mut ffi::c_void,
+					 &mut len, tptr);
 	}
 	if err == 0 {
 	    if len < data.capacity() as GensioDS {

@@ -25,6 +25,25 @@ pub const GENSIO_EVENT_PARMLOG:	ffi::c_int = 12; // struct gensio_parm_data
 pub const GENSIO_EVENT_WIN_SIZE: ffi::c_int = 13;
 pub const GENSIO_EVENT_LOG: ffi::c_int = 14; // struct gensio_log_data
 
+pub const SERGENSIO_EVENT_BASE: ffi::c_int = 1000;
+pub const GENSIO_EVENT_SER_MODEMSTATE: ffi::c_int = SERGENSIO_EVENT_BASE + 1;
+pub const GENSIO_EVENT_SER_LINESTATE: ffi::c_int = SERGENSIO_EVENT_BASE + 2;
+pub const GENSIO_EVENT_SER_SIGNATURE: ffi::c_int = SERGENSIO_EVENT_BASE + 3;
+pub const GENSIO_EVENT_SER_FLOW_STATE: ffi::c_int = SERGENSIO_EVENT_BASE + 4;
+pub const GENSIO_EVENT_SER_FLUSH: ffi::c_int = SERGENSIO_EVENT_BASE + 5;
+pub const GENSIO_EVENT_SER_SYNC: ffi::c_int = SERGENSIO_EVENT_BASE + 6;
+pub const GENSIO_EVENT_SER_BAUD: ffi::c_int = SERGENSIO_EVENT_BASE + 7;
+pub const GENSIO_EVENT_SER_DATASIZE: ffi::c_int = SERGENSIO_EVENT_BASE + 8;
+pub const GENSIO_EVENT_SER_PARITY: ffi::c_int = SERGENSIO_EVENT_BASE + 9;
+pub const GENSIO_EVENT_SER_STOPBITS: ffi::c_int = SERGENSIO_EVENT_BASE + 10;
+pub const GENSIO_EVENT_SER_FLOWCONTROL: ffi::c_int = SERGENSIO_EVENT_BASE + 11;
+pub const GENSIO_EVENT_SER_IFLOWCONTROL: ffi::c_int = SERGENSIO_EVENT_BASE + 12;
+pub const GENSIO_EVENT_SER_SBREAK: ffi::c_int = SERGENSIO_EVENT_BASE + 13;
+pub const GENSIO_EVENT_SER_DTR: ffi::c_int = SERGENSIO_EVENT_BASE + 14;
+pub const GENSIO_EVENT_SER_RTS: ffi::c_int = SERGENSIO_EVENT_BASE + 15;
+pub const GENSIO_EVENT_SER_MODEMSTATE_MASK: ffi::c_int = SERGENSIO_EVENT_BASE + 16;
+pub const GENSIO_EVENT_SER_LINESTATE_MASK: ffi::c_int = SERGENSIO_EVENT_BASE + 17;
+
 // FIXME - gensio log mask
 
 #[allow(non_camel_case_types)]
@@ -44,6 +63,13 @@ pub type gensio_done_err = extern "C" fn (io: *const gensio,
 #[allow(non_camel_case_types)]
 pub type gensio_done = extern "C" fn (io: *const gensio,
 				      user_data: *mut ffi::c_void);
+
+#[allow(non_camel_case_types)]
+pub type gensio_control_done = extern "C" fn (io: *const gensio,
+					      err: ffi::c_int,
+					      buf: *const ffi::c_void,
+					      len: gensiods,
+					      user_data: *mut ffi::c_void);
 
 pub const GENSIO_ACC_EVENT_NEW_CONNECTION: ffi::c_int =		1;
 pub const GENSIO_ACC_EVENT_LOG: ffi::c_int =			2;
@@ -209,6 +235,27 @@ extern "C" {
 			  datalen: &mut gensiods) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
+    pub fn gensio_acontrol(g: *const gensio, depth: ffi::c_int,
+			   get: ffi::c_int, option: ffi::c_uint,
+			   data: *const ffi::c_void, datalen: gensiods,
+			   done: gensio_control_done,
+			   done_data: *mut ffi::c_void,
+			   timeout: *const gensio_time) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acontrol_s(g: *const gensio, depth: ffi::c_int,
+			     get: ffi::c_int, option: ffi::c_uint,
+			     data: *mut ffi::c_void, datalen: &mut gensiods,
+			     timeout: *const gensio_time) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_acontrol_s_intr(g: *const gensio, depth: ffi::c_int,
+				  get: ffi::c_int, option: ffi::c_uint,
+				  data: *mut ffi::c_void,
+				  datalen: &mut gensiods,
+				  timeout: *const gensio_time) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
     pub fn str_to_gensio_accepter(s: *const ffi::c_char,
 				  o: *const gensio_os_funcs,
 				  cb: gensio_accepter_event,
@@ -266,6 +313,19 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     pub fn gensio_free_loginfo_str(str: *mut ffi::c_char);
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_parity_to_str(val: ffi::c_uint) -> *const ffi::c_char;
+    #[allow(improper_ctypes)]
+    pub fn gensio_str_to_parity(sval: *const ffi::c_char) -> ffi::c_int;
+    #[allow(improper_ctypes)]
+    pub fn gensio_flowcontrol_to_str(val: ffi::c_uint) -> *const ffi::c_char;
+    #[allow(improper_ctypes)]
+    pub fn gensio_str_to_flowcontrol(sval: *const ffi::c_char) -> ffi::c_int;
+    #[allow(improper_ctypes)]
+    pub fn gensio_onoff_to_str(val: ffi::c_uint) -> *const ffi::c_char;
+    #[allow(improper_ctypes)]
+    pub fn gensio_str_to_onoff(sval: *const ffi::c_char) -> ffi::c_int;
 }
 
 #[cfg(test)]
