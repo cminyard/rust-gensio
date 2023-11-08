@@ -335,6 +335,7 @@ mod tests {
 
     use crate::osfuncs::raw::gensio_alloc_os_funcs;
     use crate::osfuncs::raw::gensio_os_funcs_free;
+    use crate::osfuncs::raw::gensio_os_thread_setup;
 
     use crate::osfuncs::raw::gensio_waiter;
     use crate::osfuncs::raw::gensio_os_funcs_alloc_waiter;
@@ -408,6 +409,10 @@ mod tests {
 	let o: *const gensio_os_funcs = std::ptr::null();
 	unsafe {
 	    err = gensio_alloc_os_funcs(-198234, &o);
+	}
+	assert_eq!(err, 0);
+	unsafe {
+	    err = gensio_os_thread_setup(o);
 	}
 	assert_eq!(err, 0);
 	let w;

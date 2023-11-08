@@ -80,6 +80,10 @@ extern "C" {
 				-> ffi::c_int;
 
     #[allow(improper_ctypes)]
+    pub fn gensio_os_thread_setup(o: *const gensio_os_funcs)
+				  -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
     pub fn gensio_os_proc_cleanup(data: *const gensio_os_proc_data);
 
     #[allow(improper_ctypes)]

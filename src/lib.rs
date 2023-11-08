@@ -188,8 +188,8 @@ extern "C" fn control_done(_io: *const raw::gensio,
 	std::slice::from_raw_parts(data, len as usize)
     };
     match err {
-	0 => d.cb.done_err(err),
-	_ => d.cb.done(data)
+	0 => d.cb.done(data),
+	_ => d.cb.done_err(err)
     }
 }
 
@@ -197,11 +197,9 @@ extern "C" fn op_done_err(_io: *const raw::gensio, err: ffi::c_int,
 			  user_data: *mut ffi::c_void) {
     let d = user_data as *mut OpDoneErrData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
-    let cb = d.cb;
-    if err == 0 {
-	cb.done();
-    } else {
-	cb.done_err(err);
+    match err {
+	0 => d.cb.done(),
+	_ => d.cb.done_err(err)
     }
 }
 
@@ -270,7 +268,7 @@ pub trait Event {
 	GE_NOTSUP
     }
 
-    fn request_password(&self, _maxsize: u64) -> (i32, Option<String>) {
+    fn request_password(&self, _maxsize: usize) -> (i32, Option<String>) {
 	(GE_NOTSUP, None)
     }
 
@@ -520,7 +518,7 @@ extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	raw::GENSIO_EVENT_REQUEST_PASSWORD => {
 	    let s;
 	    let maxlen = unsafe {*buflen as usize };
-	    (err, s) = unsafe { (*g).cb.request_password(maxlen as u64) };
+	    (err, s) = unsafe { (*g).cb.request_password(maxlen) };
 	    if err == 0 {
 		match s {
 		    None => return GE_INVAL,
@@ -1613,6 +1611,8 @@ mod tests {
     fn basic_gensio() {
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
+	o.thread_setup().expect("Couldn't setup thread");
+
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let e = Arc::new(EvStruct { w: w });
 	let g = new("echo".to_string(), &o, e.clone())
@@ -1713,6 +1713,7 @@ mod tests {
     fn parmerr() {
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
+	o.thread_setup().expect("Couldn't setup thread");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
@@ -1735,6 +1736,7 @@ mod tests {
     fn acc_conn1() {
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
+	o.thread_setup().expect("Couldn't setup thread");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
@@ -1764,6 +1766,7 @@ mod tests {
     fn acc_conn2() {
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
+	o.thread_setup().expect("Couldn't setup thread");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
@@ -1855,22 +1858,44 @@ mod tests {
 
     struct TelnetReflectorInst {
         g: Arc<Gensio>,
-	_list: Arc<TelnetReflectorInstList>,
+	list: Arc<TelnetReflectorInstList>,
         d: Mutex<TelnetReflectorInstData>,
+    }
+
+    impl TelnetReflectorInst {
+	fn shutdown(&self) {
+	    let mut list = self.list.list.lock().unwrap();
+	    // Removing ourself from the list will drop the reference.
+	    list.retain(|x| std::ptr::eq(x.as_ref(), self));
+	}
     }
 
     impl Event for TelnetReflectorInst {
         fn err(&self, _err: i32) -> i32 {
-	    
+	    printfit("Err!\n");
+	    self.shutdown();
             0
         }
 
         fn read(&self, buf: &[u8], _auxdata: &Option<Vec<String>>)
                 -> (i32, usize) {
-            (0, buf.len())
+	    match self.g.write(buf, None) {
+		Ok(len) => {
+		    if (len as usize) < buf.len() {
+			self.g.read_enable(false);
+			self.g.write_enable(true);
+		    }
+		    (0, (len as u64).try_into().unwrap())
+		}
+		Err(err) => {
+		    self.shutdown();
+		    (err, 0)
+		}
+	    }
         }
 
         fn write_ready(&self) -> i32 {
+            self.g.read_enable(true);
             self.g.write_enable(false);
             0
         }
@@ -1889,7 +1914,7 @@ mod tests {
 
     struct TelnetReflector {
         a: Arc<Accepter>,
-        _port: String,
+        port: String,
 	list: Arc<TelnetReflectorInstList>,
     }
 
@@ -1901,9 +1926,12 @@ mod tests {
 
 	    let d = TelnetReflectorInstData { ..Default::default() };
 	    let inst = TelnetReflectorInst { g: g.clone(),
-					     _list: self.list.clone(),
+					     list: self.list.clone(),
 					     d: Mutex::new(d) };
-	    list.push(Arc::new(inst));
+	    let inst = Arc::new(inst);
+	    g.set_handler(inst.clone());
+	    g.read_enable(true);
+	    list.push(inst);
 	    0
         }
     }
@@ -1932,17 +1960,76 @@ mod tests {
 	let port = a.control_str(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_GET,
 				 GENSIO_ACC_CONTROL_LPORT, "")?;
 	let list = TelnetReflectorInstList {  list: Mutex::new(Vec::new()) };
-	let refl = TelnetReflector { a: Arc::new(a), _port: port,
+	let refl = TelnetReflector { a: Arc::new(a), port: port,
 				     list: Arc::new(list) };
         let refl = Arc::new(refl);
 	refl.a.set_handler(refl.clone());
 	Ok(refl)
     }
 
+    struct SerialEvInst {
+	w: osfuncs::Waiter,
+	expect_val: Mutex<Option<String>>,
+    }
+
+    impl Event for SerialEvInst {
+	fn parmlog(&self, _s: String) {
+	    panic!("Unexpected parm log");
+	}
+
+	fn err(&self, _err: i32) -> i32 {
+	    panic!("Unexpected err");
+	}
+
+	fn read(&self, buf: &[u8], _auxdata: &Option<Vec<String>>)
+		-> (i32, usize) {
+	    (0, buf.len())
+	}
+    }
+
+    impl ControlDone for SerialEvInst {
+	fn done_err(&self, _err: i32) {
+	    panic!("Unexpected err");
+	}
+
+	fn done(&self, buf: &[u8]) {
+	    let mut v = self.expect_val.lock().unwrap();
+	    match &*v {
+		None => panic!("No value"),
+		Some(s2) => {
+		    let s = String::from_utf8(buf.to_vec()).unwrap();
+		    assert_eq!(*s2, s);
+		}
+	    };
+	    *v = None;
+	    self.w.wake().expect("Wake control done failed");
+	}
+    }
+
     #[test]
     fn serial() {
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
-        let _r = new_telnet_reflector(&o).expect("Allocate reflector failed");
+	o.thread_setup().expect("Couldn't setup thread");
+	let w = o.new_waiter().expect("Couldn't allocate waiter");
+        let r = new_telnet_reflector(&o).expect("Allocate reflector failed");
+
+	let e = Arc::new(SerialEvInst{
+	    w,
+	    expect_val: Mutex::new(None),
+	});
+	let fs = format!("telnet(rfc2217),tcp,localhost,{}", r.port).to_string();
+	let g = new(fs, &o, e.clone()).expect("Gensio allocation failed");
+	g.open_s().expect("Open failed");
+	{
+	    let mut v = e.expect_val.lock().unwrap();
+	    *v = Some("19200".to_string());
+	}
+	g.read_enable(true);
+	g.acontrol(0, GENSIO_CONTROL_SET, GENSIO_ACONTROL_SER_BAUD,
+		   "19200".as_bytes(),
+		   Some(e.clone()), None).expect("Acontrol baud failed");
+	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	g.close_s().expect("Close failed");
     }
 }

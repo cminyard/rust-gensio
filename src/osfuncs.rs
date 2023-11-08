@@ -158,6 +158,14 @@ impl OsFuncs {
 	}
     }
 
+    pub fn thread_setup(&self) -> Result<(), i32> {
+	let err = unsafe { raw::gensio_os_thread_setup(self.o.o) };
+	match err {
+	    0 => Ok(()),
+	    _ => Err(err)
+	}
+    }
+
     pub fn register_term_handler(&self, handler: Arc<dyn GensioTermHandler>)
                                  -> Result<(), i32> {
         if self.proc_data == std::ptr::null() {
@@ -617,6 +625,7 @@ mod tests {
     #[test]
     fn wait_test() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.thread_setup().expect("Couldn't setup thread");
 	let w = o.new_waiter().expect("Couldn't allocate Waiter");
 
 	drop(o);
@@ -636,6 +645,8 @@ mod tests {
     #[test]
     fn timer_test() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.thread_setup().expect("Couldn't setup thread");
+
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -653,6 +664,8 @@ mod tests {
     #[test]
     fn timer_test2() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.thread_setup().expect("Couldn't setup thread");
+
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -682,6 +695,8 @@ mod tests {
     #[test]
     fn timer_test3() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.thread_setup().expect("Couldn't setup thread");
+
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -729,6 +744,8 @@ mod tests {
     #[test]
     fn timer_test4() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.thread_setup().expect("Couldn't setup thread");
+
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
@@ -892,6 +909,8 @@ mod tests {
     #[test]
     fn runner_test() {
 	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	o.thread_setup().expect("Couldn't setup thread");
+
 	let h = Arc::new(HandleRunner1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
