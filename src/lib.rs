@@ -239,7 +239,7 @@ pub trait Event {
     /// Report some received data.  The i32 return (first value in
     /// tuble) return is the error return, normally 0, and the u64
     /// (second value) is the number of bytes consumed.
-    fn read(&self, buf: &[u8], auxdata: &Option<Vec<String>>) -> (i32, u64);
+    fn read(&self, buf: &[u8], auxdata: &Option<Vec<String>>) -> (i32, usize);
 
     fn write_ready(&self) -> i32 {
 	GE_NOTSUP
@@ -418,7 +418,8 @@ impl Event for DummyEvHndl {
 	GE_NOTSUP
     }
 
-    fn read(&self, _buf: &[u8], _auxdata: &Option<Vec<String>>) -> (i32, u64) {
+    fn read(&self, _buf: &[u8], _auxdata: &Option<Vec<String>>)
+	    -> (i32, usize) {
 	(GE_NOTSUP, 0)
     }
 }
@@ -970,11 +971,13 @@ impl Gensio {
 
     /// Call gensio_acontrol with the given options.
     pub fn acontrol(&self, depth: i32, get: bool, option: u32,
-		    data: &mut Vec<u8>, done: Arc<dyn ControlDone>,
+		    data: &[u8], done: Option<Arc<dyn ControlDone>>,
 		    timeout: Option<&Duration>)
 		    -> Result<(), i32> {
-	let d = Box::new(ControlDoneData { cb : done });
-	let d = Box::into_raw(d);
+	let d = match done {
+	    Some(v) => Box::into_raw(Box::new(ControlDoneData { cb : v })),
+	    None => std::ptr::null_mut()
+	};
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -982,7 +985,7 @@ impl Gensio {
 	let err = unsafe {
 	    raw::gensio_acontrol(self.g, depth, get, option,
 				 data.as_ptr() as *const ffi::c_void,
-				 data.capacity() as GensioDS,
+				 data.len() as GensioDS,
 				 control_done, d as *mut ffi::c_void, tptr)
 	};
 	match err {
@@ -1065,19 +1068,13 @@ impl Gensio {
 			  data: &Vec<u8>) -> Result<Vec<u8>, i32> {
 	let mut len: usize;
 	let mut data2 = data.clone();
-	match self.control(depth, get, option, &mut data2) {
-	    Ok(ilen) => len = ilen,
-	    Err(err) => return Err(err)
-	}
+	len = self.control(depth, get, option, &mut data2)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
 	let mut data2 = data.clone();
 	data2.reserve(len + 1); // Add 1 for C string terminator
-	match self.control(depth, get, option, &mut data2) {
-	    Ok(ilen) => len = ilen,
-	    Err(err) => return Err(err)
-	}
+	len = self.control(depth, get, option, &mut data2)?;
 	if len >= data2.capacity() {
 	    Err(GE_TOOBIG)
 	} else {
@@ -1493,19 +1490,13 @@ impl Accepter {
 			  data: &Vec<u8>) -> Result<Vec<u8>, i32> {
 	let mut len: usize;
 	let mut data2 = data.clone();
-	match self.control(depth, get, option, &mut data2) {
-	    Ok(ilen) => len = ilen,
-	    Err(err) => return Err(err)
-	}
+	len = self.control(depth, get, option, &mut data2)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
 	let mut data2 = data.clone();
 	data2.reserve(len + 1);
-	match self.control(depth, get, option, &mut data2) {
-	    Ok(ilen) => len = ilen,
-	    Err(err) => return Err(err)
-	}
+	len = self.control(depth, get, option, &mut data2)?;
 	if len >= data2.capacity() {
 	    Err(GE_TOOBIG)
 	} else {
@@ -1518,10 +1509,8 @@ impl Accepter {
     pub fn control_str(&self, depth: i32, get: bool, option: u32, val: &str)
 		       -> Result<String, i32> {
 	let mut valv = val.as_bytes().to_vec();
-	match self.control_resize(depth, get, option, &mut valv) {
-	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
-	    Err(err) => Err(err)
-	}
+	let rv = self.control_resize(depth, get, option, &mut valv)?;
+	Ok(String::from_utf8(rv).unwrap())
     }
 
     pub fn is_reliable(&self) -> bool {
@@ -1587,12 +1576,12 @@ mod tests {
 	}
 
 	fn read(&self, buf: &[u8], _auxdata: &Option<Vec<String>>)
-		-> (i32, u64) {
+		-> (i32, usize) {
 	    assert_eq!(buf.len(), 7);
 	    let s = unsafe { std::str::from_utf8_unchecked(buf) };
 	    assert_eq!(s, "teststr");
 	    self.w.wake().expect("Wake open done failed");
-	    (0, buf.len() as u64)
+	    (0, buf.len())
 	}
     }
 
@@ -1715,7 +1704,7 @@ mod tests {
 	}
 
 	fn read(&self, _buf: &[u8], _auxdata: &Option<Vec<String>>)
-		-> (i32, u64) {
+		-> (i32, usize) {
 	    (0, 0)
 	}
     }
@@ -1849,22 +1838,35 @@ mod tests {
 	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
     }
 
-    struct TelnetReflectorData {
+    struct TelnetReflectorInstList {
+	list: Mutex<Vec<Arc<TelnetReflectorInst>>>,
     }
 
-    struct TelnetReflectorEv {
-        g: Gensio,
-        d: Mutex<TelnetReflectorData>,
+    struct TelnetReflectorInstData {
+	baud: u32,
+    }
+    impl Default for TelnetReflectorInstData {
+	fn default() -> TelnetReflectorInstData {
+	    TelnetReflectorInstData {
+		baud: 9600,
+	    }
+	}
     }
 
-    impl Event for TelnetReflectorEv {
-        fn err(&self, err: i32) -> i32 {
-            assert_eq!(err, 0);
+    struct TelnetReflectorInst {
+        g: Arc<Gensio>,
+	_list: Arc<TelnetReflectorInstList>,
+        d: Mutex<TelnetReflectorInstData>,
+    }
+
+    impl Event for TelnetReflectorInst {
+        fn err(&self, _err: i32) -> i32 {
+	    
             0
         }
 
         fn read(&self, buf: &[u8], _auxdata: &Option<Vec<String>>)
-                -> (i32, u64) {
+                -> (i32, usize) {
             (0, buf.len())
         }
 
@@ -1873,51 +1875,74 @@ mod tests {
             0
         }
 
-        fn baud(&self, val: u32) {
+        fn baud(&self, baud: u32) {
+	    {
+		let mut d = self.d.lock().unwrap();
+		d.baud = baud;
+	    }
+	    let baud = baud.to_string();
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_BAUD, baud.as_bytes(),
+				None, None);
         }
     }
 
     struct TelnetReflector {
-        a: Accepter,
-        port: String,
+        a: Arc<Accepter>,
+        _port: String,
+	list: Arc<TelnetReflectorInstList>,
     }
 
     impl AccepterEvent for TelnetReflector {
+	// No need for parmlog, InitialTelnetReflectorEv handled that.
+
+        fn new_connection(&self, g: Arc<Gensio>) -> i32 {
+	    let mut list = self.list.list.lock().unwrap();
+
+	    let d = TelnetReflectorInstData { ..Default::default() };
+	    let inst = TelnetReflectorInst { g: g.clone(),
+					     _list: self.list.clone(),
+					     d: Mutex::new(d) };
+	    list.push(Arc::new(inst));
+	    0
+        }
+    }
+
+    // Used as the initial handler when creating a new accepter.  Will be
+    // replaced after the accepter is up.
+    struct InitialTelnetReflectorEv {
+    }
+
+    impl AccepterEvent for InitialTelnetReflectorEv {
         fn parmlog(&self, s: String) {
             printfit(&format!("Unexpected parmlog: {s}\n").to_string());
-            assert!(false);
         }
 
-        fn new_connection(&self, g: Arc<Gensio>) -> u32 {
+	// Refuse connections until we are ready.
+        fn new_connection(&self, _g: Arc<Gensio>) -> i32 {
             GE_NOTSUP
         }
     }
 
-    struct InitialTelnetReflectorAccEv {
-    }
-
-    impl AccepterEvent for InitialTelnetReflectorAccEv {
-        fn parmlog(&self, s: String) {
-            printfit(&format!("Unexpected parmlog: {s}\n").to_string());
-        }
-
-        fn new_connection(&self, g: Arc<Gensio>) -> u32 {
-            GE_NOTSUP
-        }
-    }
-
-    fn new_telnet_reflector(o: &Arc<OsFuncs>) -> Result<TelnetReflector, i32> {
+    fn new_telnet_reflector(o: &Arc<osfuncs::OsFuncs>)
+			    -> Result<Arc<TelnetReflector>, i32> {
         let a = new_accepter("telnet(rfc2217),tcp,localhost,0".to_string(),
-                             o, Arc::new(InitialTelnetReflectorAccEv{}))?;
+                             o, Arc::new(InitialTelnetReflectorEv{}))?;
         a.startup()?;
-	let port = a.control_str(0, GENSIO_CONTROL_GET,
+	let port = a.control_str(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_GET,
 				 GENSIO_ACC_CONTROL_LPORT, "")?;
-        let refl = Telnet
+	let list = TelnetReflectorInstList {  list: Mutex::new(Vec::new()) };
+	let refl = TelnetReflector { a: Arc::new(a), _port: port,
+				     list: Arc::new(list) };
+        let refl = Arc::new(refl);
+	refl.a.set_handler(refl.clone());
+	Ok(refl)
     }
 
     #[test]
     fn serial() {
-        let m = Mutex::new(TelnetReflectorData { });
-        let r = TelnetReflector { g: new("telnet(rfc2217),tcp,
+	let o = osfuncs::new(Arc::new(LogHandler))
+	    .expect("Couldn't allocate os funcs");
+        let _r = new_telnet_reflector(&o).expect("Allocate reflector failed");
     }
 }
