@@ -1427,6 +1427,12 @@ extern "C" fn acc_op_done(_io: *const raw::gensio_accepter,
 }
 
 impl Accepter {
+    pub fn set_handler(&self, cb: Arc<dyn AccepterEvent>) {
+	let g = self.myptr as *mut Accepter;
+
+	unsafe { (*g).cb = cb; }
+    }
+
     pub fn startup(&self) -> Result<(), i32> {
 	let err = unsafe {
 	    raw::gensio_acc_startup(self.a)
@@ -1841,5 +1847,77 @@ mod tests {
 
 	a.shutdown(e1.clone()).expect("Shutdown failed");
 	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+    }
+
+    struct TelnetReflectorData {
+    }
+
+    struct TelnetReflectorEv {
+        g: Gensio,
+        d: Mutex<TelnetReflectorData>,
+    }
+
+    impl Event for TelnetReflectorEv {
+        fn err(&self, err: i32) -> i32 {
+            assert_eq!(err, 0);
+            0
+        }
+
+        fn read(&self, buf: &[u8], _auxdata: &Option<Vec<String>>)
+                -> (i32, u64) {
+            (0, buf.len())
+        }
+
+        fn write_ready(&self) -> i32 {
+            self.g.write_enable(false);
+            0
+        }
+
+        fn baud(&self, val: u32) {
+        }
+    }
+
+    struct TelnetReflector {
+        a: Accepter,
+        port: String,
+    }
+
+    impl AccepterEvent for TelnetReflector {
+        fn parmlog(&self, s: String) {
+            printfit(&format!("Unexpected parmlog: {s}\n").to_string());
+            assert!(false);
+        }
+
+        fn new_connection(&self, g: Arc<Gensio>) -> u32 {
+            GE_NOTSUP
+        }
+    }
+
+    struct InitialTelnetReflectorAccEv {
+    }
+
+    impl AccepterEvent for InitialTelnetReflectorAccEv {
+        fn parmlog(&self, s: String) {
+            printfit(&format!("Unexpected parmlog: {s}\n").to_string());
+        }
+
+        fn new_connection(&self, g: Arc<Gensio>) -> u32 {
+            GE_NOTSUP
+        }
+    }
+
+    fn new_telnet_reflector(o: &Arc<OsFuncs>) -> Result<TelnetReflector, i32> {
+        let a = new_accepter("telnet(rfc2217),tcp,localhost,0".to_string(),
+                             o, Arc::new(InitialTelnetReflectorAccEv{}))?;
+        a.startup()?;
+	let port = a.control_str(0, GENSIO_CONTROL_GET,
+				 GENSIO_ACC_CONTROL_LPORT, "")?;
+        let refl = Telnet
+    }
+
+    #[test]
+    fn serial() {
+        let m = Mutex::new(TelnetReflectorData { });
+        let r = TelnetReflector { g: new("telnet(rfc2217),tcp,
     }
 }
