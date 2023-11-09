@@ -12,6 +12,7 @@
 use std::ffi;
 use std::sync::Arc;
 use std::time::Duration;
+use std::panic;
 
 pub mod osfuncs;
 pub mod raw;
@@ -176,11 +177,12 @@ struct ControlDoneData {
     cb: Arc<dyn ControlDone>
 }
 
-extern "C" fn control_done(_io: *const raw::gensio,
-			   err: ffi::c_int,
-			   buf: *const ffi::c_void,
-			   len: GensioDS,
-			   user_data: *mut ffi::c_void) {
+fn i_control_done(_io: *const raw::gensio,
+		  err: ffi::c_int,
+		  buf: *const ffi::c_void,
+		  len: GensioDS,
+		  user_data: *mut ffi::c_void)
+{
     let d = user_data as *mut ControlDoneData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
     let data = buf as *const u8;
@@ -193,14 +195,31 @@ extern "C" fn control_done(_io: *const raw::gensio,
     }
 }
 
-extern "C" fn op_done_err(_io: *const raw::gensio, err: ffi::c_int,
-			  user_data: *mut ffi::c_void) {
+extern "C" fn control_done(io: *const raw::gensio,
+			   err: ffi::c_int,
+			   buf: *const ffi::c_void,
+			   len: GensioDS,
+			   user_data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_control_done(io, err, buf, len, user_data);
+    });
+}
+
+fn i_op_done_err(_io: *const raw::gensio, err: ffi::c_int,
+		 user_data: *mut ffi::c_void) {
     let d = user_data as *mut OpDoneErrData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
     match err {
 	0 => d.cb.done(),
 	_ => d.cb.done_err(err)
     }
+}
+
+extern "C" fn op_done_err(io: *const raw::gensio, err: ffi::c_int,
+			  user_data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_op_done_err(io, err, user_data);
+    });
 }
 
 /// Close callbacks will need to implement this trait.
@@ -213,11 +232,18 @@ struct OpDoneData {
     cb: Arc<dyn OpDone>
 }
 
-extern "C" fn op_done(_io: *const raw::gensio,
-		      user_data: *mut ffi::c_void) {
+ fn i_op_done(_io: *const raw::gensio,
+	      user_data: *mut ffi::c_void) {
     let d = user_data as *mut OpDoneData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
     d.cb.done();
+}
+
+extern "C" fn op_done(io: *const raw::gensio,
+		      user_data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_op_done(io, user_data);
+    });
 }
 
 /// The struct that gets callbacks from a gensio will need to
@@ -422,10 +448,10 @@ impl Event for DummyEvHndl {
     }
 }
 
-extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
-		     event: ffi::c_int, ierr: ffi::c_int,
-		     buf: *const ffi::c_void, buflen: *mut GensioDS,
-		     auxdata: *const *const ffi::c_char) -> ffi::c_int
+fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
+	    event: ffi::c_int, ierr: ffi::c_int,
+	    buf: *const ffi::c_void, buflen: *mut GensioDS,
+	    auxdata: *const *const ffi::c_char) -> ffi::c_int
 {
     let g = user_data as *mut Gensio;
 
@@ -674,6 +700,20 @@ extern "C" fn evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	_ => err = GE_NOTSUP
     }
     err
+}
+
+extern "C" fn evhndl(io: *const raw::gensio, user_data: *const ffi::c_void,
+		     event: ffi::c_int, ierr: ffi::c_int,
+		     buf: *const ffi::c_void, buflen: *mut GensioDS,
+		     auxdata: *const *const ffi::c_char) -> ffi::c_int
+{
+    let r = panic::catch_unwind(|| {
+	i_evhndl(io, user_data, event, ierr, buf, buflen, auxdata)
+    });
+    match r {
+	Ok(v) => v,
+	Err(_) => GE_OSERR
+    }
 }
 
 /// Allocate a new gensio based upon the given string.  We pass in an
@@ -989,7 +1029,9 @@ impl Gensio {
 	match err {
 	    0 => Ok(()),
 	    _ => {
-		unsafe { drop(Box::from_raw(d)); } // Free the data
+		if d != std::ptr::null_mut() {
+		    unsafe { drop(Box::from_raw(d)); } // Free the data
+		}
 		Err(err)
 	    }
 	}
@@ -1235,11 +1277,11 @@ pub struct Accepter {
     myptr: *mut Accepter
 }
 
-extern "C" fn acc_evhndl(_acc: *const raw::gensio_accepter,
-			 user_data: *const ffi::c_void,
-			 event: ffi::c_int,
-			 data: *const ffi::c_void)
-			 -> ffi::c_int {
+fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
+		user_data: *const ffi::c_void,
+		event: ffi::c_int,
+		data: *const ffi::c_void)
+		-> ffi::c_int {
     let a = user_data as *mut Accepter;
 
     let err: i32;
@@ -1369,6 +1411,20 @@ extern "C" fn acc_evhndl(_acc: *const raw::gensio_accepter,
     err
 }
 
+extern "C" fn acc_evhndl(acc: *const raw::gensio_accepter,
+			 user_data: *const ffi::c_void,
+			 event: ffi::c_int,
+			 data: *const ffi::c_void)
+			 -> ffi::c_int {
+    let r = panic::catch_unwind(|| {
+	i_acc_evhndl(acc, user_data, event, data)
+    });
+    match r {
+	Ok(v) => v,
+	Err(_) => GE_OSERR
+    }
+}
+
 pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
 		    cb: Arc<dyn AccepterEvent>)
 		    -> Result<Accepter, i32> {
@@ -1414,11 +1470,18 @@ struct AccepterOpDoneData {
     cb: Arc<dyn AccepterOpDone>
 }
 
-extern "C" fn acc_op_done(_io: *const raw::gensio_accepter,
-			  user_data: *mut ffi::c_void) {
+fn i_acc_op_done(_io: *const raw::gensio_accepter,
+	       user_data: *mut ffi::c_void) {
     let d = user_data as *mut AccepterOpDoneData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
     d.cb.done();
+}
+
+extern "C" fn acc_op_done(io: *const raw::gensio_accepter,
+			  user_data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_acc_op_done(io, user_data)
+    });
 }
 
 impl Accepter {
@@ -1554,6 +1617,77 @@ impl Drop for Accepter {
 		drop(Box::from_raw(self.myptr));
 	    }
 	}
+    }
+}
+
+/// A helper function to take a string and convert it to a nil terminated
+/// vector.  This is useful for passing strings to control() and friends.
+pub fn to_term_str_bytes(s: &str) -> Vec<u8> {
+    let mut v = s.as_bytes().to_vec();
+    v.push(0);
+    v
+}
+
+/// Convert an integer parity value to a string.
+pub fn parity_to_str(val: u32) -> String {
+    let cs = unsafe { raw::gensio_parity_to_str(val as ffi::c_uint) };
+    let cs = unsafe { ffi::CStr::from_ptr(cs) };
+    String::from_utf8_lossy(cs.to_bytes()).to_string()
+}
+
+/// Convert an integer parity string to a numeric value.
+pub fn str_to_parity(sval: &str) -> Result<u32, i32> {
+    let cs = match ffi::CString::new(sval) {
+	Ok(s) => s,
+	Err(_) => return Err(GE_INVAL)
+    };
+    let val = unsafe { raw::gensio_str_to_parity(cs.as_ptr()) };
+    if val < 0 {
+	Err(GE_INVAL)
+    } else {
+	Ok(val as u32)
+    }
+}
+
+/// Convert an integer flowcontrol value to a string.
+pub fn flowcontrol_to_str(val: u32) -> String {
+    let cs = unsafe { raw::gensio_flowcontrol_to_str(val as ffi::c_uint) };
+    let cs = unsafe { ffi::CStr::from_ptr(cs) };
+    String::from_utf8_lossy(cs.to_bytes()).to_string()
+}
+
+/// Convert an integer flowcontrol string to a numeric value.
+pub fn str_to_flowcontrol(sval: &str) -> Result<u32, i32> {
+    let cs = match ffi::CString::new(sval) {
+	Ok(s) => s,
+	Err(_) => return Err(GE_INVAL)
+    };
+    let val = unsafe { raw::gensio_str_to_flowcontrol(cs.as_ptr()) };
+    if val < 0 {
+	Err(GE_INVAL)
+    } else {
+	Ok(val as u32)
+    }
+}
+
+/// Convert an integer onoff value to a string.
+pub fn onoff_to_str(val: u32) -> String {
+    let cs = unsafe { raw::gensio_onoff_to_str(val as ffi::c_uint) };
+    let cs = unsafe { ffi::CStr::from_ptr(cs) };
+    String::from_utf8_lossy(cs.to_bytes()).to_string()
+}
+
+/// Convert an integer onoff string to a numeric value.
+pub fn str_to_onoff(sval: &str) -> Result<u32, i32> {
+    let cs = match ffi::CString::new(sval) {
+	Ok(s) => s,
+	Err(_) => return Err(GE_INVAL)
+    };
+    let val = unsafe { raw::gensio_str_to_onoff(cs.as_ptr()) };
+    if val < 0 {
+	Err(GE_INVAL)
+    } else {
+	Ok(val as u32)
     }
 }
 
@@ -1847,11 +1981,29 @@ mod tests {
 
     struct TelnetReflectorInstData {
 	baud: u32,
+	datasize: u32,
+	stopbits: u32,
+	parity: u32,
+	flowcontrol: u32,
+	iflowcontrol: u32,
+	sbreak: u32,
+	rts: u32,
+	dtr: u32,
+	signature: Vec<u8>,
     }
     impl Default for TelnetReflectorInstData {
 	fn default() -> TelnetReflectorInstData {
 	    TelnetReflectorInstData {
 		baud: 9600,
+		datasize: 8,
+		stopbits: 1,
+		parity: GENSIO_SER_PARITY_NONE,
+		flowcontrol: GENSIO_SER_FLOWCONTROL_NONE,
+		iflowcontrol: GENSIO_SER_FLOWCONTROL_NONE,
+		sbreak: GENSIO_SER_OFF,
+		dtr: GENSIO_SER_OFF,
+		rts: GENSIO_SER_OFF,
+		signature: "mysig".as_bytes().to_vec(),
 	    }
 	}
     }
@@ -1901,13 +2053,165 @@ mod tests {
         }
 
         fn baud(&self, baud: u32) {
+	    let mut baud = baud;
 	    {
 		let mut d = self.d.lock().unwrap();
-		d.baud = baud;
+		if baud != 0 {
+		    d.baud = baud;
+		} else {
+		    baud = d.baud;
+		}
 	    }
 	    let baud = baud.to_string();
 	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_BAUD, baud.as_bytes(),
+				GENSIO_ACONTROL_SER_BAUD,
+				to_term_str_bytes(&baud).as_slice(),
+				None, None);
+        }
+
+        fn datasize(&self, val: u32) {
+	    let mut val = val;
+	    {
+		let mut d = self.d.lock().unwrap();
+		if val != 0 {
+		    d.datasize = val;
+		} else {
+		    val = d.datasize;
+		}
+	    }
+	    let val = val.to_string();
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_DATASIZE,
+				to_term_str_bytes(&val).as_slice(),
+				None, None);
+        }
+
+        fn stopbits(&self, val: u32) {
+	    let mut val = val;
+	    {
+		let mut d = self.d.lock().unwrap();
+		if val != 0 {
+		    d.stopbits = val;
+		} else {
+		    val = d.stopbits;
+		}
+	    }
+	    let val = val.to_string();
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_STOPBITS,
+				to_term_str_bytes(&val).as_slice(),
+				None, None);
+        }
+
+        fn parity(&self, val: u32) {
+	    let mut val = val;
+	    {
+		let mut d = self.d.lock().unwrap();
+		if val != 0 {
+		    d.parity = val;
+		} else {
+		    val = d.parity;
+		}
+	    }
+	    let val = parity_to_str(val);
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_PARITY,
+				to_term_str_bytes(&val).as_slice(),
+				None, None);
+        }
+
+        fn flowcontrol(&self, val: u32) {
+	    let mut val = val;
+	    {
+		let mut d = self.d.lock().unwrap();
+		if val != 0 {
+		    d.flowcontrol = val;
+		} else {
+		    val = d.flowcontrol;
+		}
+	    }
+	    let val = flowcontrol_to_str(val);
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_FLOWCONTROL,
+				to_term_str_bytes(&val).as_slice(),
+				None, None);
+        }
+
+        fn iflowcontrol(&self, val: u32) {
+	    let mut val = val;
+	    {
+		let mut d = self.d.lock().unwrap();
+		if val != 0 {
+		    d.iflowcontrol = val;
+		} else {
+		    val = d.iflowcontrol;
+		}
+	    }
+	    let val = flowcontrol_to_str(val);
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_IFLOWCONTROL,
+				to_term_str_bytes(&val).as_slice(),
+				None, None);
+        }
+
+        fn sbreak(&self, val: u32) {
+	    let mut val = val;
+	    {
+		let mut d = self.d.lock().unwrap();
+		if val != 0 {
+		    d.sbreak = val;
+		} else {
+		    val = d.sbreak;
+		}
+	    }
+	    let val = onoff_to_str(val);
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_SBREAK,
+				to_term_str_bytes(&val).as_slice(),
+				None, None);
+        }
+
+        fn dtr(&self, val: u32) {
+	    let mut val = val;
+	    {
+		let mut d = self.d.lock().unwrap();
+		if val != 0 {
+		    d.dtr = val;
+		} else {
+		    val = d.dtr;
+		}
+	    }
+	    let val = onoff_to_str(val);
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_DTR,
+				to_term_str_bytes(&val).as_slice(),
+				None, None);
+        }
+
+        fn rts(&self, val: u32) {
+	    let mut val = val;
+	    {
+		let mut d = self.d.lock().unwrap();
+		if val != 0 {
+		    d.rts = val;
+		} else {
+		    val = d.rts;
+		}
+	    }
+	    let val = onoff_to_str(val);
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_RTS,
+				to_term_str_bytes(&val).as_slice(),
+				None, None);
+        }
+
+        fn signature(&self, _val: &[u8]) {
+	    let d = self.d.lock().unwrap();
+	    // Signature value cannot be changed.
+	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST,
+				GENSIO_CONTROL_SET,
+				GENSIO_ACONTROL_SER_SIGNATURE,
+				d.signature.as_slice(),
 				None, None);
         }
     }
@@ -2006,6 +2310,29 @@ mod tests {
 	}
     }
 
+    // Get the current value of "option" synchronously, which should
+    // match osval, then set the value to sval and validate that it
+    // matches.
+    fn test_acontrol(e: &Arc<SerialEvInst>, g: &Gensio,
+		     name: &str, osval: &str, sval: &str, option: u32)
+    {
+	let mut v = Vec::with_capacity(16);
+	v.extend(to_term_str_bytes("0").as_slice());
+	g.acontrol_s(0, GENSIO_CONTROL_GET, option,
+		     &mut v, None)
+	    .expect(&format!("Acontrol get {name} failed"));
+	assert_eq!(v.as_slice(), osval.as_bytes());
+
+	{
+	    let mut v = e.expect_val.lock().unwrap();
+	    *v = Some(sval.to_string());
+	}
+	g.acontrol(0, GENSIO_CONTROL_SET, option,
+		   to_term_str_bytes(sval).as_slice(),
+		   Some(e.clone()), None).expect("Acontrol failed");
+	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+    }
+
     #[test]
     fn serial() {
 	let o = osfuncs::new(Arc::new(LogHandler))
@@ -2021,15 +2348,29 @@ mod tests {
 	let fs = format!("telnet(rfc2217),tcp,localhost,{}", r.port).to_string();
 	let g = new(fs, &o, e.clone()).expect("Gensio allocation failed");
 	g.open_s().expect("Open failed");
-	{
-	    let mut v = e.expect_val.lock().unwrap();
-	    *v = Some("19200".to_string());
-	}
 	g.read_enable(true);
-	g.acontrol(0, GENSIO_CONTROL_SET, GENSIO_ACONTROL_SER_BAUD,
-		   "19200".as_bytes(),
-		   Some(e.clone()), None).expect("Acontrol baud failed");
-	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+
+	test_acontrol(&e, &g, "baud", "9600", "19200",
+		      GENSIO_ACONTROL_SER_BAUD);
+	test_acontrol(&e, &g, "datasize", "8", "7",
+		      GENSIO_ACONTROL_SER_DATASIZE);
+	test_acontrol(&e, &g, "stopbits", "1", "2",
+		      GENSIO_ACONTROL_SER_STOPBITS);
+	test_acontrol(&e, &g, "parity", "none", "odd",
+		      GENSIO_ACONTROL_SER_PARITY);
+	test_acontrol(&e, &g, "flowcontrol", "none", "xonxoff",
+		      GENSIO_ACONTROL_SER_FLOWCONTROL);
+	test_acontrol(&e, &g, "iflowcontrol", "none", "dtr",
+		      GENSIO_ACONTROL_SER_IFLOWCONTROL);
+	test_acontrol(&e, &g, "sbreak", "off", "on",
+		      GENSIO_ACONTROL_SER_SBREAK);
+	test_acontrol(&e, &g, "dtr", "off", "on",
+		      GENSIO_ACONTROL_SER_DTR);
+	test_acontrol(&e, &g, "rts", "off", "on",
+		      GENSIO_ACONTROL_SER_RTS);
+	test_acontrol(&e, &g, "signature", "mysig", "mysig",
+		      GENSIO_ACONTROL_SER_SIGNATURE);
+
 	g.close_s().expect("Close failed");
     }
 }

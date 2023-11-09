@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 use std::ffi;
+use std::panic;
 pub mod raw;
 
 /// Used to refcount gensio_os_funcs.
@@ -79,13 +80,20 @@ struct GensioLogHandlerData {
     cb: Arc<dyn GensioLogHandler>
 }
 
-extern "C" fn log_handler(log: *const ffi::c_char,
-			  data: *mut ffi::c_void) {
+fn i_log_handler(log: *const ffi::c_char,
+		 data: *mut ffi::c_void) {
     let d = data as *mut GensioLogHandlerData;
     let s = unsafe { ffi::CStr::from_ptr(log) };
     let s = s.to_str().expect("Invalid log string").to_string();
 
     unsafe { (*d).cb.log(s); }
+}
+
+extern "C" fn log_handler(log: *const ffi::c_char,
+			  data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_log_handler(log, data)
+    });
 }
 
 /// Used to report a termination signal, Windows or Unix
@@ -97,12 +105,18 @@ struct GensioTermHandlerData {
     cb: Mutex<Option<Arc<dyn GensioTermHandler>>>
 }
 
-extern "C" fn term_handler(data: *mut ffi::c_void) {
+fn i_term_handler(data: *mut ffi::c_void) {
     let d = data as *mut GensioTermHandlerData;
     match *unsafe {(*d).cb.lock().unwrap() } {
         None => (),
         Some(ref cb) => cb.term_sig()
     }
+}
+
+extern "C" fn term_handler(data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_term_handler(data)
+    });
 }
 
 /// Used to report a hangup signal, Unix
@@ -114,12 +128,18 @@ struct GensioHupHandlerData {
     cb: Mutex<Option<Arc<dyn GensioHupHandler>>>
 }
 
-extern "C" fn hup_handler(data: *mut ffi::c_void) {
+fn i_hup_handler(data: *mut ffi::c_void) {
     let d = data as *mut GensioHupHandlerData;
     match *unsafe {(*d).cb.lock().unwrap() } {
         None => (),
         Some(ref cb) => cb.hup_sig()
     }
+}
+
+extern "C" fn hup_handler(data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_hup_handler(data)
+    });
 }
 
 /// Used to report a window size signal, Unix and Windows
@@ -131,13 +151,21 @@ struct GensioWinsizeHandlerData {
     cb: Mutex<Option<Arc<dyn GensioWinsizeHandler>>>
 }
 
-extern "C" fn winsize_handler(x_chrs: i32, y_chrs: i32, x_bits: i32, y_bits: i32,
-                              data: *mut ffi::c_void) {
+fn i_winsize_handler(x_chrs: i32, y_chrs: i32, x_bits: i32, y_bits: i32,
+                     data: *mut ffi::c_void) {
     let d = data as *mut GensioWinsizeHandlerData;
     match *unsafe {(*d).cb.lock().unwrap() } {
         None => (),
         Some(ref cb) => cb.winsize_sig(x_chrs, y_chrs, x_bits, y_bits)
     }
+}
+
+extern "C" fn winsize_handler(x_chrs: i32, y_chrs: i32,
+			      x_bits: i32, y_bits: i32,
+                              data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_winsize_handler(x_chrs, y_chrs, x_bits, y_bits, data)
+    });
 }
 
 impl OsFuncs {
@@ -413,10 +441,17 @@ pub struct Timer {
     d: *mut TimerData
 }
 
-extern "C" fn timeout_handler(_t: *const raw::gensio_timer,
-			      cb_data: *mut ffi::c_void) {
+fn i_timeout_handler(_t: *const raw::gensio_timer,
+		     cb_data: *mut ffi::c_void) {
     let d = cb_data as *mut TimerData;
     unsafe { (*d).handler.timeout() };
+}
+
+extern "C" fn timeout_handler(t: *const raw::gensio_timer,
+			      cb_data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_timeout_handler(t, cb_data)
+    });
 }
 
 struct TimerStopData {
@@ -424,8 +459,8 @@ struct TimerStopData {
     d: *mut TimerData
 }
 
-extern "C" fn timer_stopped_handler(_t: *const raw::gensio_timer,
-				    cb_data: *mut ffi::c_void) {
+fn i_timer_stopped_handler(_t: *const raw::gensio_timer,
+			   cb_data: *mut ffi::c_void) {
     let d = cb_data as *mut TimerStopData;
     unsafe {
 	let d2 = (*d).d;
@@ -444,13 +479,27 @@ extern "C" fn timer_stopped_handler(_t: *const raw::gensio_timer,
     }
 }
 
-extern "C" fn timer_freed_handler(_t: *const raw::gensio_timer,
-				  cb_data: *mut ffi::c_void) {
+extern "C" fn timer_stopped_handler(t: *const raw::gensio_timer,
+				    cb_data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_timer_stopped_handler(t, cb_data)
+    });
+}
+
+extern "C" fn i_timer_freed_handler(_t: *const raw::gensio_timer,
+				    cb_data: *mut ffi::c_void) {
     let d = cb_data as *mut TimerData;
 
     unsafe {
 	raw::gensio_os_funcs_wake((*d).o.o, (*d).w);
     }
+}
+
+extern "C" fn timer_freed_handler(t: *const raw::gensio_timer,
+				  cb_data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_timer_freed_handler(t, cb_data)
+    });
 }
 
 impl Timer {
@@ -581,10 +630,17 @@ pub struct Runner {
     d: *mut RunnerData
 }
 
-extern "C" fn runner_handler(_r: *const raw::gensio_runner,
-			     cb_data: *mut ffi::c_void) {
+fn i_runner_handler(_r: *const raw::gensio_runner,
+		    cb_data: *mut ffi::c_void) {
     let d = cb_data as *mut RunnerData;
     unsafe { (*d).handler.runner() };
+}
+
+extern "C" fn runner_handler(r: *const raw::gensio_runner,
+			     cb_data: *mut ffi::c_void) {
+    let _r = panic::catch_unwind(|| {
+	i_runner_handler(r, cb_data)
+    });
 }
 
 impl Runner {
