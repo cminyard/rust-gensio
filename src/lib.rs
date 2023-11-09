@@ -708,7 +708,7 @@ extern "C" fn evhndl(io: *const raw::gensio, user_data: *const ffi::c_void,
 /// Allocate a new gensio based upon the given string.  We pass in an
 /// Arc holding the reference to the event handler.  This function
 /// clones it so it can make sure the data stays around until the
-/// gensio is closed.
+/// gensio is closed.  See str_to_gensio() for details.
 pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
 	   -> Result<Gensio, i32>
 {
@@ -781,6 +781,7 @@ impl Gensio {
 	}
     }
 
+    /// Set a new event handler for the gensio.
     pub fn set_handler(&self, cb: Arc<dyn Event>) {
 	let g = self.myptr as *mut Gensio;
 
@@ -1056,6 +1057,8 @@ impl Gensio {
 	}
     }
 
+    /// Like acontrol, but taks a string and converts it to nil
+    /// terminated bytes for the caller.
     pub fn acontrol_str(&self, depth: i32, get: bool, option: u32,
 			data: &str, done: Option<Arc<dyn ControlDone>>,
 			timeout: Option<&Duration>)
@@ -1098,6 +1101,7 @@ impl Gensio {
 	}
     }
 
+    /// Like acontrol_s, but resize return the result in a new vector.
     pub fn acontrol_resize_s(&self, depth: i32, get: bool, option: u32,
 			     data: &Vec<u8>,
 			     timeout: Option<&Duration>)
@@ -1118,6 +1122,8 @@ impl Gensio {
 	}
     }
 
+    /// Like acontrol_resize_s, but takes and returns a string that is
+    /// converted to/from bytes.
     pub fn acontrol_str_s(&self, depth: i32, get: bool, option: u32, val: &str,
 			  timeout: Option<&Duration>)
 			  -> Result<String, i32> {
@@ -1160,6 +1166,7 @@ impl Gensio {
 	}
     }
 
+    /// Like acontrol_intr_s, but resize return the result in a new vector.
     pub fn acontrol_resize_s_intr(&self, depth: i32, get: bool, option: u32,
 				  data: &Vec<u8>,
 				  timeout: Option<&Duration>)
@@ -1180,6 +1187,8 @@ impl Gensio {
 	}
     }
 
+    /// Like acontrol_resize_s_intr, but takes and returns a string that is
+    /// converted to/from bytes.
     pub fn acontrol_str_s_intr(&self, depth: i32, get: bool, option: u32,
 			       val: &str, timeout: Option<&Duration>)
 			       -> Result<String, i32> {
@@ -1191,6 +1200,7 @@ impl Gensio {
 	}
     }
 
+    /// Return a string for the gensio type at the given depth.
     pub fn get_type(&self, depth: u32) -> String {
 	let s;
 	unsafe {
@@ -1201,54 +1211,67 @@ impl Gensio {
 	s
     }
 
+    /// Return if the gensio is client side or server side.
     pub fn is_client(&self) -> bool {
 	unsafe {
 	    raw::gensio_is_client(self.g) != 0
 	}
     }
 
+    /// Return if the gensio transfers data reliable (no loss and flow
+    /// control).
     pub fn is_reliable(&self) -> bool {
 	unsafe {
 	    raw::gensio_is_reliable(self.g) != 0
 	}
     }
 
+    /// Return if the gensio is packet oriented.  See gensio_is_packet.3.
     pub fn is_packet(&self) -> bool {
 	unsafe {
 	    raw::gensio_is_packet(self.g) != 0
 	}
     }
 
+    /// Returns if the connection is authenticated.
     pub fn is_authenticated(&self) -> bool {
 	unsafe {
 	    raw::gensio_is_authenticated(self.g) != 0
 	}
     }
 
+    /// Returns if the connection is encrypted.
     pub fn is_encrypted(&self) -> bool {
 	unsafe {
 	    raw::gensio_is_encrypted(self.g) != 0
 	}
     }
 
+    /// Returns if the connection is message oriented.  See
+    /// gensio_is_message.3.
     pub fn is_message(&self) -> bool {
 	unsafe {
 	    raw::gensio_is_message(self.g) != 0
 	}
     }
 
+    /// Returns if the gensio is a mux.
     pub fn is_mux(&self) -> bool {
 	unsafe {
 	    raw::gensio_is_mux(self.g) != 0
 	}
     }
 
+    /// Returns if the gensio acts as a serial port.  Note that this
+    /// means that something in the gensio stack is a serial port.
     pub fn is_serial(&self) -> bool {
 	unsafe {
 	    raw::gensio_is_serial(self.g) != 0
 	}
     }
 
+    /// Enable synchronous mode on the gensio, so read_s and write_s
+    /// work.  See gensio_set_sync.3.
     pub fn set_sync(&self) -> Result<(), i32> {
 	let err = unsafe { raw::gensio_set_sync(self.g) };
 	match err {
@@ -1257,6 +1280,7 @@ impl Gensio {
 	}
     }
 
+    /// Disable synchronous mode on a gensio.
     pub fn clear_sync(&self) -> Result<(), i32> {
 	let err = unsafe { raw::gensio_clear_sync(self.g) };
 	match err {
@@ -1290,41 +1314,51 @@ pub trait AccepterEvent {
     /// Called when parameter parsing is incorrect in str_to_gensio().
     fn parmlog(&self, _s: String) {}
 
+    /// A gensio has come in on a connection.
     fn new_connection(&self, g: Arc<Gensio>) -> i32;
 
+    /// See gensio_event.3, GENSIO_EVENT_AUTH_BEGIN.
     fn auth_begin(&self) -> i32 {
 	GE_NOTSUP
     }
 
+    /// See gensio_event.3, GENSIO_EVENT_PRECERT_VERIFY.
     fn precert_verify(&self) -> i32 {
 	GE_NOTSUP
     }
 
+    /// See gensio_event.3, GENSIO_EVENT_POSTCERT_VERIFY.
     fn postcert_verify(&self, _err: i32, _errstr: &Option<String>) -> i32 {
 	GE_NOTSUP
     }
 
+    /// See gensio_event.3, GENSIO_EVENT_PASSWORD_VERIFY.
     fn password_verify(&self, _passwd: &String) -> i32 {
 	GE_NOTSUP
     }
 
+    /// See gensio_event.3, GENSIO_EVENT_PASSWORD_REQUEST_PASSWORD.
     fn request_password(&self, _maxsize: u64) -> (i32, Option<String>) {
 	(GE_NOTSUP, None)
     }
 
+    /// See gensio_event.3, GENSIO_EVENT_VERIFY_2FA.
     fn verify_2fa(&self, _data: &[u8]) -> i32 {
 	GE_NOTSUP
     }
 
+    /// See gensio_event.3, GENSIO_EVENT_REQUEST_2FA.
     fn request_2fa(&self) -> (i32, Option<&[u8]>) {
 	(GE_NOTSUP, None)
     }
 }
 
+/// See gensio_acc_control.3 for these.
 pub const GENSIO_ACC_CONTROL_LADDR: u32 = 1;
 pub const GENSIO_ACC_CONTROL_LPORT: u32 = 2;
 pub const GENSIO_ACC_CONTROL_TCPDNAME: u32 = 3;
 
+/// An accepter gensio for receiving connections.
 pub struct Accepter {
     o: Arc<osfuncs::IOsFuncs>, // Used to keep the os funcs alive.
     a: *const raw::gensio_accepter,
@@ -1483,6 +1517,10 @@ extern "C" fn acc_evhndl(acc: *const raw::gensio_accepter,
     }
 }
 
+/// Allocate a new accepter gensio.  We pass in an Arc holding the
+/// reference to the event handler.  This function clones it so it can
+/// make sure the data stays around until the gensio is closed.  See
+/// str_to_gensio_accepter.3
 pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
 		    cb: Arc<dyn AccepterEvent>)
 		    -> Result<Accepter, i32> {
@@ -1543,12 +1581,14 @@ extern "C" fn acc_op_done(io: *const raw::gensio_accepter,
 }
 
 impl Accepter {
+    /// Set a new event handler for the accepter.
     pub fn set_handler(&self, cb: Arc<dyn AccepterEvent>) {
 	let g = self.myptr as *mut Accepter;
 
 	unsafe { (*g).cb = cb; }
     }
 
+    /// Start the accepter running.
     pub fn startup(&self) -> Result<(), i32> {
 	let err = unsafe {
 	    raw::gensio_acc_startup(self.a)
@@ -1559,7 +1599,8 @@ impl Accepter {
 	}
     }
 
-    /// Note that the accepter is not shut down until the callback is called.
+    /// Stop the accepter.  Note that the accepter is not shut down
+    /// until the callback is called.
     pub fn shutdown(&self, cb: Arc<dyn AccepterOpDone>) -> Result<(), i32> {
 	let d = Box::new(AccepterOpDoneData { cb : cb });
 	let d = Box::into_raw(d);
@@ -1632,30 +1673,35 @@ impl Accepter {
 	Ok(String::from_utf8(rv).unwrap())
     }
 
+    /// Will gensios the accepter creates be reliable?
     pub fn is_reliable(&self) -> bool {
 	unsafe {
 	    raw::gensio_acc_is_reliable(self.a) != 0
 	}
     }
 
+    /// Will gensios the accepter creates be packet oriented?
     pub fn is_packet(&self) -> bool {
 	unsafe {
 	    raw::gensio_acc_is_packet(self.a) != 0
 	}
     }
 
+    /// Will gensios the accepter creates be message oriented?
     pub fn is_message(&self) -> bool {
 	unsafe {
 	    raw::gensio_acc_is_message(self.a) != 0
 	}
     }
 
+    /// Will gensios the accepter creates be muxes?
     pub fn is_mux(&self) -> bool {
 	unsafe {
 	    raw::gensio_acc_is_mux(self.a) != 0
 	}
     }
 
+    /// Will gensios the accepter creates be serial?
     pub fn is_serial(&self) -> bool {
 	unsafe {
 	    raw::gensio_acc_is_serial(self.a) != 0
