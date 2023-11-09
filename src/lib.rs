@@ -17,7 +17,7 @@ use std::panic;
 pub mod osfuncs;
 pub mod raw;
 
-/// gensio error values
+/// gensio error values.  See gensio_err.3
 pub const GE_NOERR:			i32 = 0;
 pub const GE_NOMEM:			i32 = 1;
 pub const GE_NOTSUP:			i32 = 2;
@@ -69,7 +69,7 @@ pub const GENSIO_CONTROL_DEPTH_FIRST: i32 =	-2;
 pub const GENSIO_CONTROL_GET: bool =	true;
 pub const GENSIO_CONTROL_SET: bool =	false;
 
-/// Values for the third parameter of control functions.
+/// Values for the third parameter of control functions.  See gensio_control.3
 pub const GENSIO_CONTROL_NODELAY: u32 =			1;
 pub const GENSIO_CONTROL_STREAMS: u32 =			2;
 pub const GENSIO_CONTROL_SEND_BREAK: u32 =		3;
@@ -135,17 +135,6 @@ pub const GENSIO_ACONTROL_SER_RI: u32 =			1011;
 pub const GENSIO_ACONTROL_SER_SIGNATURE: u32 =		1012;
 
 type GensioDS = osfuncs::raw::gensiods;
-
-extern "C" {
-    fn printf(s: *const ffi::c_char);
-}
-
-pub fn printfit(s: &str) {
-    let s1 = ffi::CString::new(s).expect("CString::new failed");
-    unsafe {
-	printf(s1.as_ptr());
-    }
-}
 
 /// Open callbacks will need to implement this trait.
 pub trait OpDoneErr {
@@ -1696,6 +1685,17 @@ mod tests {
     use std::time::Duration;
     use std::sync::Mutex;
     use super::*;
+    use log::{ error };
+
+    static LOGGER_INITIALIZED: Mutex<bool> = Mutex::new(false);
+
+    fn init_logger() {
+	let mut b = LOGGER_INITIALIZED.lock().unwrap();
+	if !*b {
+	    *b = true;
+	    env_logger::init();
+	}
+    }
 
     struct EvStruct {
 	w: osfuncs::Waiter
@@ -1743,6 +1743,7 @@ mod tests {
 
     #[test]
     fn basic_gensio() {
+	init_logger();
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
@@ -1778,7 +1779,7 @@ mod tests {
 	    let mut d = self.d.lock().unwrap();
 	    let chks = match &d.logstr {
 		None => {
-		    printfit(&format!("Unexpected log: {s}\n").to_string());
+		    error!("{}", &format!("Unexpected log: {s}\n").to_string());
 		    assert!(false);
 		    return;
 		}
@@ -1819,7 +1820,7 @@ mod tests {
 	    let mut d = self.d.lock().unwrap();
 	    let chks = match &d.logstr {
 		None => {
-		    printfit(&format!("Unexpected log: {s}\n").to_string());
+		    error!("{}", &format!("Unexpected log: {s}\n").to_string());
 		    assert!(false);
 		    return;
 		}
@@ -1845,6 +1846,7 @@ mod tests {
 
     #[test]
     fn parmerr() {
+	init_logger();
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
@@ -1868,6 +1870,7 @@ mod tests {
 
     #[test]
     fn acc_conn1() {
+	init_logger();
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
@@ -1898,6 +1901,7 @@ mod tests {
 
     #[test]
     fn acc_conn2() {
+	init_logger();
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
@@ -2023,8 +2027,8 @@ mod tests {
     }
 
     impl Event for TelnetReflectorInst {
-        fn err(&self, _err: i32) -> i32 {
-	    printfit("Err!\n");
+        fn err(&self, err: i32) -> i32 {
+	    error!("{}", &format!("Error: {err}\n").to_string());
 	    self.shutdown();
             0
         }
@@ -2247,7 +2251,7 @@ mod tests {
 
     impl AccepterEvent for InitialTelnetReflectorEv {
         fn parmlog(&self, s: String) {
-            printfit(&format!("Unexpected parmlog: {s}\n").to_string());
+            error!("{}", &format!("Unexpected parmlog: {s}\n").to_string());
         }
 
 	// Refuse connections until we are ready.
@@ -2335,6 +2339,7 @@ mod tests {
 
     #[test]
     fn serial() {
+	init_logger();
 	let o = osfuncs::new(Arc::new(LogHandler))
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
