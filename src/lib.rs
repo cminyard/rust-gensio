@@ -134,7 +134,7 @@ pub const GENSIO_ACONTROL_SER_DCD_DSR: u32 =		1010;
 pub const GENSIO_ACONTROL_SER_RI: u32 =			1011;
 pub const GENSIO_ACONTROL_SER_SIGNATURE: u32 =		1012;
 
-type GensioDS = osfuncs::raw::gensiods;
+pub type GensioDS = osfuncs::raw::gensiods;
 
 /// Open callbacks will need to implement this trait.
 pub trait OpDoneErr {
@@ -221,8 +221,8 @@ struct OpDoneData {
     cb: Arc<dyn OpDone>
 }
 
- fn i_op_done(_io: *const raw::gensio,
-	      user_data: *mut ffi::c_void) {
+fn i_op_done(_io: *const raw::gensio,
+	     user_data: *mut ffi::c_void) {
     let d = user_data as *mut OpDoneData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
     d.cb.done();
@@ -996,6 +996,36 @@ impl Gensio {
 	}
     }
 
+    /// Call gensio_control() and return a vector holding the result.
+    pub fn control_resize(&self, depth: i32, get: bool, option: u32,
+			  data: &Vec<u8>) -> Result<Vec<u8>, i32> {
+	let mut len: usize;
+	let mut data2 = data.clone();
+	len = self.control(depth, get, option, &mut data2)?;
+	if len <= data2.capacity() {
+	    return Ok(data2);
+	}
+	let mut data2 = data.clone();
+	data2.reserve(len + 1); // Add 1 for C string terminator
+	len = self.control(depth, get, option, &mut data2)?;
+	if len >= data2.capacity() {
+	    Err(GE_TOOBIG)
+	} else {
+	    Ok(data2)
+	}
+    }
+
+    /// Call gensio_control(), passing in the given string.  The result
+    /// string is returned in Ok().
+    pub fn control_str(&self, depth: i32, get: bool, option: u32, val: &str)
+		       -> Result<String, i32> {
+	let mut valv = to_term_str_bytes(val);
+	match self.control_resize(depth, get, option, &mut valv) {
+	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
+	    Err(err) => Err(err)
+	}
+    }
+
     /// Call gensio_acontrol with the given options.
     pub fn acontrol(&self, depth: i32, get: bool, option: u32,
 		    data: &[u8], done: Option<Arc<dyn ControlDone>>,
@@ -1024,6 +1054,15 @@ impl Gensio {
 		Err(err)
 	    }
 	}
+    }
+
+    pub fn acontrol_str(&self, depth: i32, get: bool, option: u32,
+			data: &str, done: Option<Arc<dyn ControlDone>>,
+			timeout: Option<&Duration>)
+			-> Result<(), i32> {
+	
+	let datav = to_term_str_bytes(data);
+	self.acontrol(depth, get, option, datav.as_slice(), done, timeout)
     }
 
     /// Call gensio_acontrol_s() with the given options.  As much data as
@@ -1059,9 +1098,38 @@ impl Gensio {
 	}
     }
 
-    /// Call gensio_acontrol_s() with the given options.  As much data as
-    /// can be held is stored in data upon return and the required
-    /// size to return all data is returned in Ok().
+    pub fn acontrol_resize_s(&self, depth: i32, get: bool, option: u32,
+			     data: &Vec<u8>,
+			     timeout: Option<&Duration>)
+			     -> Result<Vec<u8>, i32> {
+	let mut len: usize;
+	let mut data2 = data.clone();
+	len = self.acontrol_s(depth, get, option, &mut data2, timeout)?;
+	if len <= data2.capacity() {
+	    return Ok(data2);
+	}
+	let mut data2 = data.clone();
+	data2.reserve(len + 1); // Add 1 for C string terminator
+	len = self.acontrol_s(depth, get, option, &mut data2, timeout)?;
+	if len >= data2.capacity() {
+	    Err(GE_TOOBIG)
+	} else {
+	    Ok(data2)
+	}
+    }
+
+    pub fn acontrol_str_s(&self, depth: i32, get: bool, option: u32, val: &str,
+			  timeout: Option<&Duration>)
+			  -> Result<String, i32> {
+	let mut valv = to_term_str_bytes(val);
+	match self.acontrol_resize_s(depth, get, option, &mut valv, timeout) {
+	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
+	    Err(err) => Err(err)
+	}
+    }
+
+    /// Like acontrol_s() but this version is interruptible on Unix
+    /// like systems.
     pub fn acontrol_s_intr(&self, depth: i32, get: bool, option: u32,
 			   data: &mut Vec<u8>,
 			   timeout: Option<&Duration>) -> Result<usize, i32> {
@@ -1092,18 +1160,19 @@ impl Gensio {
 	}
     }
 
-    /// Call gensio_control() and return a vector holding the result.
-    pub fn control_resize(&self, depth: i32, get: bool, option: u32,
-			  data: &Vec<u8>) -> Result<Vec<u8>, i32> {
+    pub fn acontrol_resize_s_intr(&self, depth: i32, get: bool, option: u32,
+				  data: &Vec<u8>,
+				  timeout: Option<&Duration>)
+				  -> Result<Vec<u8>, i32> {
 	let mut len: usize;
 	let mut data2 = data.clone();
-	len = self.control(depth, get, option, &mut data2)?;
+	len = self.acontrol_s_intr(depth, get, option, &mut data2, timeout)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
 	let mut data2 = data.clone();
 	data2.reserve(len + 1); // Add 1 for C string terminator
-	len = self.control(depth, get, option, &mut data2)?;
+	len = self.acontrol_s_intr(depth, get, option, &mut data2, timeout)?;
 	if len >= data2.capacity() {
 	    Err(GE_TOOBIG)
 	} else {
@@ -1111,12 +1180,12 @@ impl Gensio {
 	}
     }
 
-    /// Call gensio_control(), passing in the given string.  The result
-    /// string is returned in Ok().
-    pub fn control_str(&self, depth: i32, get: bool, option: u32, val: &str)
-		       -> Result<String, i32> {
-	let mut valv = val.as_bytes().to_vec();
-	match self.control_resize(depth, get, option, &mut valv) {
+    pub fn acontrol_str_s_intr(&self, depth: i32, get: bool, option: u32,
+			       val: &str, timeout: Option<&Duration>)
+			       -> Result<String, i32> {
+	let mut valv = to_term_str_bytes(val);
+	match self.acontrol_resize_s_intr(depth, get, option, &mut valv,
+					  timeout) {
 	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
 	    Err(err) => Err(err)
 	}
@@ -2067,10 +2136,10 @@ mod tests {
 		}
 	    }
 	    let baud = baud.to_string();
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_BAUD,
-				to_term_str_bytes(&baud).as_slice(),
-				None, None);
+	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
+				    GENSIO_CONTROL_SET,
+				    GENSIO_ACONTROL_SER_BAUD,
+				    &baud.to_string(), None, None);
         }
 
         fn datasize(&self, val: u32) {
@@ -2083,11 +2152,10 @@ mod tests {
 		    val = d.datasize;
 		}
 	    }
-	    let val = val.to_string();
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_DATASIZE,
-				to_term_str_bytes(&val).as_slice(),
-				None, None);
+	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
+				    GENSIO_CONTROL_SET,
+				    GENSIO_ACONTROL_SER_DATASIZE,
+				    &val.to_string(), None, None);
         }
 
         fn stopbits(&self, val: u32) {
@@ -2101,10 +2169,10 @@ mod tests {
 		}
 	    }
 	    let val = val.to_string();
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_STOPBITS,
-				to_term_str_bytes(&val).as_slice(),
-				None, None);
+	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
+				    GENSIO_CONTROL_SET,
+				    GENSIO_ACONTROL_SER_STOPBITS,
+				    &val.to_string(), None, None);
         }
 
         fn parity(&self, val: u32) {
@@ -2118,10 +2186,10 @@ mod tests {
 		}
 	    }
 	    let val = parity_to_str(val);
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_PARITY,
-				to_term_str_bytes(&val).as_slice(),
-				None, None);
+	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
+				    GENSIO_CONTROL_SET,
+				    GENSIO_ACONTROL_SER_PARITY,
+				    &val.to_string(), None, None);
         }
 
         fn flowcontrol(&self, val: u32) {
@@ -2135,10 +2203,10 @@ mod tests {
 		}
 	    }
 	    let val = flowcontrol_to_str(val);
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_FLOWCONTROL,
-				to_term_str_bytes(&val).as_slice(),
-				None, None);
+	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
+				    GENSIO_CONTROL_SET,
+				    GENSIO_ACONTROL_SER_FLOWCONTROL,
+				    &val.to_string(), None, None);
         }
 
         fn iflowcontrol(&self, val: u32) {
@@ -2152,10 +2220,10 @@ mod tests {
 		}
 	    }
 	    let val = flowcontrol_to_str(val);
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_IFLOWCONTROL,
-				to_term_str_bytes(&val).as_slice(),
-				None, None);
+	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
+				    GENSIO_CONTROL_SET,
+				    GENSIO_ACONTROL_SER_IFLOWCONTROL,
+				    &val.to_string(), None, None);
         }
 
         fn sbreak(&self, val: u32) {
@@ -2169,10 +2237,10 @@ mod tests {
 		}
 	    }
 	    let val = onoff_to_str(val);
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_SBREAK,
-				to_term_str_bytes(&val).as_slice(),
-				None, None);
+	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
+				    GENSIO_CONTROL_SET,
+				    GENSIO_ACONTROL_SER_SBREAK,
+				    &val.to_string(), None, None);
         }
 
         fn dtr(&self, val: u32) {
@@ -2186,10 +2254,10 @@ mod tests {
 		}
 	    }
 	    let val = onoff_to_str(val);
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_DTR,
-				to_term_str_bytes(&val).as_slice(),
-				None, None);
+	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
+				    GENSIO_CONTROL_SET,
+				    GENSIO_ACONTROL_SER_DTR,
+				    &val.to_string(), None, None);
         }
 
         fn rts(&self, val: u32) {
@@ -2203,10 +2271,10 @@ mod tests {
 		}
 	    }
 	    let val = onoff_to_str(val);
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_RTS,
-				to_term_str_bytes(&val).as_slice(),
-				None, None);
+	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
+				    GENSIO_CONTROL_SET,
+				    GENSIO_ACONTROL_SER_RTS,
+				    &val.to_string(), None, None);
         }
 
         fn signature(&self, _val: &[u8]) {
@@ -2331,9 +2399,8 @@ mod tests {
 	    let mut v = e.expect_val.lock().unwrap();
 	    *v = Some(sval.to_string());
 	}
-	g.acontrol(0, GENSIO_CONTROL_SET, option,
-		   to_term_str_bytes(sval).as_slice(),
-		   Some(e.clone()), None).expect("Acontrol failed");
+	g.acontrol_str(0, GENSIO_CONTROL_SET, option, sval,
+		       Some(e.clone()), None).expect("Acontrol failed");
 	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
     }
 
