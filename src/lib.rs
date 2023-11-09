@@ -526,7 +526,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    err = unsafe { (*g).cb.postcert_verify(ierr, &errstr) };
 	}
 	raw::GENSIO_EVENT_PASSWORD_VERIFY => {
-	    let cs = unsafe { ffi::CStr::from_ptr(buf as *const i8) };
+	    let cs = unsafe { ffi::CStr::from_ptr(buf as *const ffi::c_char) };
 	    let s = cs.to_str().expect("Invalid string").to_string();
 	    err = unsafe { (*g).cb.password_verify(&s) };
 	}
@@ -1336,7 +1336,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    err = unsafe { (*a).cb.password_verify(&s) };
 	}
 	raw::GENSIO_ACC_EVENT_REQUEST_PASSWORD => {
-	    let mut vd = data as *mut raw::gensio_acc_password_verify_data;
+	    let vd = data as *mut raw::gensio_acc_password_verify_data;
 	    let s;
 	    let maxlen = unsafe { (*vd).password_len } as usize;
 	    (err, s) = unsafe { (*a).cb.request_password(maxlen as u64) };
@@ -1374,7 +1374,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    err = unsafe { (*a).cb.verify_2fa(data) };
 	}
 	raw::GENSIO_ACC_EVENT_REQUEST_2FA => {
-	    let mut vd = data as *mut raw::gensio_acc_password_verify_data;
+	    let vd = data as *mut raw::gensio_acc_password_verify_data;
 	    let src;
 	    (err, src) = unsafe { (*a).cb.request_2fa() };
 	    if err != 0 {
