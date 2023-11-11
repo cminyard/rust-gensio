@@ -19,6 +19,11 @@ pub mod raw;
 pub mod addr;
 pub mod mdns;
 
+// FIXME - There is an issue with close and shutdown.  If those are
+// called then the Gensio is dropped before the callback is called,
+// then there is a race at shutdown.  We need to mark if the gensio is
+// in close and wait for the close to complete.
+
 /// gensio error values.  See gensio_err.3
 pub const GE_NOERR:			i32 = 0;
 pub const GE_NOMEM:			i32 = 1;
@@ -220,14 +225,17 @@ pub trait OpDone {
 }
 
 struct OpDoneData {
-    cb: Arc<dyn OpDone>
+    cb: Option<Arc<dyn OpDone>>
 }
 
 fn i_op_done(_io: *const raw::gensio,
 	     user_data: *mut ffi::c_void) {
     let d = user_data as *mut OpDoneData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
-    d.cb.done();
+    match d.cb {
+	None => (),
+	Some(cb) => cb.done()
+    }
 }
 
 extern "C" fn op_done(io: *const raw::gensio,
@@ -805,10 +813,11 @@ impl Gensio {
     /// Close the gensio.  The cb will be called when the operation
     /// completes.  Note that the Arc holding the callback is done so
     /// the callback data can be kept around until the callback is
-    /// complete.
+    /// complete.  You can pass in None to the callback if you don't
+    /// care.
     ///
     /// Note that the gensio is not closed until the callback is called.
-    pub fn close(&self, cb: Arc<dyn OpDone>) -> Result<(), i32> {
+    pub fn close(&self, cb: Option<Arc<dyn OpDone>>) -> Result<(), i32> {
 	let d = Box::new(OpDoneData { cb : cb });
 	let d = Box::into_raw(d);
 	let err = unsafe {
@@ -1565,14 +1574,17 @@ pub trait AccepterOpDone {
 }
 
 struct AccepterOpDoneData {
-    cb: Arc<dyn AccepterOpDone>
+    cb: Option<Arc<dyn AccepterOpDone>>
 }
 
 fn i_acc_op_done(_io: *const raw::gensio_accepter,
 	       user_data: *mut ffi::c_void) {
     let d = user_data as *mut AccepterOpDoneData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
-    d.cb.done();
+    match d.cb {
+	None => (),
+	Some(cb) => cb.done()
+    }
 }
 
 extern "C" fn acc_op_done(io: *const raw::gensio_accepter,
@@ -1602,8 +1614,10 @@ impl Accepter {
     }
 
     /// Stop the accepter.  Note that the accepter is not shut down
-    /// until the callback is called.
-    pub fn shutdown(&self, cb: Arc<dyn AccepterOpDone>) -> Result<(), i32> {
+    /// until the callback is called.  You can pass in None to the
+    /// callback if you don't care.
+    pub fn shutdown(&self, cb: Option<Arc<dyn AccepterOpDone>>)
+		    -> Result<(), i32> {
 	let d = Box::new(AccepterOpDoneData { cb : cb });
 	let d = Box::into_raw(d);
 	let err = unsafe {
@@ -1877,7 +1891,7 @@ mod tests {
 			    .expect("Write failed");
 	assert_eq!(count, 7);
 	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
-	g.close(e.clone()).expect("Couldn't close gensio");
+	g.close(Some(e.clone())).expect("Couldn't close gensio");
 	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
     }
 
@@ -2092,10 +2106,10 @@ mod tests {
 	// Wait for the error from the other end.
 	e3.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
 
-	a.shutdown(e1.clone()).expect("Shutdown failed");
+	a.shutdown(Some(e1.clone())).expect("Shutdown failed");
 	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
     }
-
+<
     struct TelnetReflectorInstList {
 	list: Mutex<Vec<Arc<TelnetReflectorInst>>>,
     }
