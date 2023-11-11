@@ -11,17 +11,8 @@ pub struct gensio_mdns;
 #[repr(C)]
 pub struct gensio_mdns_service;
 
-pub const GENSIO_MDNS_SERVICE_ERROR: i32 = 0;
-pub const GENSIO_MDNS_SERVICE_READY: i32 = 1;
-pub const GENSIO_MDNS_SERVICE_READY_NEW_NAME: i32 = 2;
-pub const GENSIO_MDNS_SERVICE_REMOVED: i32 = 3;
-
 #[repr(C)]
 pub struct gensio_mdns_watch;
-
-pub const GENSIO_MDNS_WATCH_NEW_DATA: i32 = 0;
-pub const GENSIO_MDNS_WATCH_DATA_GONE: i32 = 1;
-pub const GENSIO_MDNS_WATCH_ALL_FOR_NOW: i32 = 2;
 
 #[allow(non_camel_case_types)]
 pub type gensio_mdns_done = extern "C" fn (m: *const gensio_mdns,
