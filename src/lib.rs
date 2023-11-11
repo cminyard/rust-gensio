@@ -16,6 +16,8 @@ use std::panic;
 
 pub mod osfuncs;
 pub mod raw;
+pub mod addr;
+pub mod mdns;
 
 /// gensio error values.  See gensio_err.3
 pub const GE_NOERR:			i32 = 0;
