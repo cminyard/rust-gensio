@@ -54,15 +54,15 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<Arc<OsFuncs>, i32> {
 		raw::gensio_rust_set_log(o, log_handler,
 					 d as *mut ffi::c_void);
 	    }
-		let rv = Arc::new(
-		    OsFuncs { o: Arc::new(IOsFuncs {log_data: d, o: o}),
-			      proc_data: std::ptr::null(),
-                              term_handler: Arc::new(GensioTermHandlerData
-                                                     {cb: Mutex::new(None)}),
-                              winsize_handler: Arc::new(GensioWinsizeHandlerData
-                                                        {cb: Mutex::new(None)}),
-                              hup_handler: Arc::new(GensioHupHandlerData
-                                                    {cb: Mutex::new(None)})});
+	    let rv = Arc::new(
+		OsFuncs { o: Arc::new(IOsFuncs {log_data: d, o: o}),
+			  proc_data: std::ptr::null(),
+                          term_handler: Arc::new(GensioTermHandlerData
+                                                 {cb: Mutex::new(None)}),
+                          winsize_handler: Arc::new(GensioWinsizeHandlerData
+                                                    {cb: Mutex::new(None)}),
+                          hup_handler: Arc::new(GensioHupHandlerData
+                                                {cb: Mutex::new(None)})});
 	    Ok(rv)
 	}
 	_ => Err(err)
