@@ -273,22 +273,22 @@ impl OsFuncs {
     }
 
     /// Allocate a new Waiter object for the OsFuncs.
-    pub fn new_waiter(&self) -> Option<Waiter> {
+    pub fn new_waiter(&self) -> Result<Waiter, i32> {
 	let w;
 
 	unsafe {
 	    w = raw::gensio_os_funcs_alloc_waiter(self.o.o);
 	}
 	if w == std::ptr::null() {
-	    None
+	    Err(crate::GE_NOMEM)
 	} else {
-	    Some(Waiter { o: self.o.clone() , w: w })
+	    Ok(Waiter { o: self.o.clone() , w: w })
 	}
     }
 
     /// Allocate a new Timer object for the OsFuncs.
     pub fn new_timer(&self, handler: Arc<dyn TimeoutHandler>)
-		     -> Option<Timer> {
+		     -> Result<Timer, i32> {
 	let w;
 	unsafe {
 	    w = raw::gensio_os_funcs_alloc_waiter(self.o.o);
@@ -306,14 +306,14 @@ impl OsFuncs {
 
 	if t == std::ptr::null() {
 	    unsafe { drop(Box::from_raw(d)); }
-	    return None
+	    return Err(crate::GE_NOMEM);
 	}
-	Some(Timer { t: t, d: d })
+	Ok(Timer { t: t, d: d })
     }
 
     /// Allocate a new Runner object for the OsFuncs.
     pub fn new_runner(&self, handler: Arc<dyn RunnerHandler>)
-		     -> Option<Runner> {
+		     -> Result<Runner, i32> {
 	let d = Box::new(RunnerData { o: self.o.clone(),
 				      handler: handler });
 	let d = Box::into_raw(d);
@@ -325,9 +325,9 @@ impl OsFuncs {
 
 	if r == std::ptr::null() {
 	    unsafe { drop(Box::from_raw(d)); }
-	    return None
+	    return Err(crate::GE_NOMEM);
 	}
-	Some(Runner { r: r, d: d })
+	Ok(Runner { r: r, d: d })
     }
 
     /// Get a reference to the os_funcs that we can keep and use.  For
