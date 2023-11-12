@@ -39,7 +39,7 @@ pub struct OsFuncs {
 
 /// Allocate an OsFuncs structure.  This takes a log handler for
 /// handling internal logs from gensios and osfuncs.
-pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<Arc<OsFuncs>, i32> {
+pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
     let err;
     let o: *const raw::gensio_os_funcs = std::ptr::null();
 
@@ -54,16 +54,14 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<Arc<OsFuncs>, i32> {
 		raw::gensio_rust_set_log(o, log_handler,
 					 d as *mut ffi::c_void);
 	    }
-	    let rv = Arc::new(
-		OsFuncs { o: Arc::new(IOsFuncs {log_data: d, o: o}),
-			  proc_data: std::ptr::null(),
-                          term_handler: Arc::new(GensioTermHandlerData
-                                                 {cb: Mutex::new(None)}),
-                          winsize_handler: Arc::new(GensioWinsizeHandlerData
-                                                    {cb: Mutex::new(None)}),
-                          hup_handler: Arc::new(GensioHupHandlerData
-                                                {cb: Mutex::new(None)})});
-	    Ok(rv)
+            Ok(OsFuncs { o: Arc::new(IOsFuncs {log_data: d, o: o}),
+			 proc_data: std::ptr::null(),
+                         term_handler: Arc::new(GensioTermHandlerData
+                                                {cb: Mutex::new(None)}),
+                         winsize_handler: Arc::new(GensioWinsizeHandlerData
+                                                   {cb: Mutex::new(None)}),
+                         hup_handler: Arc::new(GensioHupHandlerData
+                                               {cb: Mutex::new(None)})})
 	}
 	_ => Err(err)
     }

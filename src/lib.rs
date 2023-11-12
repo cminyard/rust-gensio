@@ -285,7 +285,7 @@ pub trait Event {
 	GE_NOTSUP
     }
 
-    fn new_channel(&self, _g: Arc<Gensio>, _auxdata: &Option<Vec<String>>)
+    fn new_channel(&self, _g: Gensio, _auxdata: &Option<Vec<String>>)
 		   -> i32 {
 	GE_NOTSUP
     }
@@ -570,7 +570,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		Err(e) => return e
 	    };
 	    err = unsafe {
-		(*g).cb.new_channel(Arc::new(new_g), &auxtovec(auxdata))
+		(*g).cb.new_channel(new_g, &auxtovec(auxdata))
 	    };
 	}
 	raw::GENSIO_EVENT_SEND_BREAK => {
@@ -1437,7 +1437,7 @@ pub trait AccepterEvent {
     fn parmlog(&self, _s: String) {}
 
     /// A gensio has come in on a connection.
-    fn new_connection(&self, g: Arc<Gensio>) -> i32;
+    fn new_connection(&self, g: Gensio) -> i32;
 
     /// See gensio_event.3, GENSIO_EVENT_AUTH_BEGIN.
     fn auth_begin(&self) -> i32 {
@@ -1542,7 +1542,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 		Err(e) => return e
 	    };
 	    err = unsafe {
-		(*a).cb.new_connection(Arc::new(new_g))
+		(*a).cb.new_connection(new_g)
 	    };
 	}
 	raw::GENSIO_ACC_EVENT_AUTH_BEGIN => {
@@ -2096,7 +2096,7 @@ mod tests {
 
     struct AccMutData {
 	logstr: Option<String>,
-	ag: Option<Arc<Gensio>>,
+	ag: Option<Gensio>,
     }
 
     struct AccEvent {
@@ -2120,7 +2120,7 @@ mod tests {
 	    self.w.wake().expect("Wake failed");
 	}
 
-	fn new_connection(&self, g: Arc<Gensio>) -> i32 {
+	fn new_connection(&self, g: Gensio) -> i32 {
 	    let mut d = self.d.lock().unwrap();
 	    d.ag = Some(g);
 	    self.w.wake().expect("Wake failed");
@@ -2343,7 +2343,7 @@ mod tests {
     }
 
     struct TelnetReflectorInst {
-        g: Arc<Gensio>,
+        g: Gensio,
 	list: Arc<TelnetReflectorInstList>,
         d: Mutex<TelnetReflectorInstData>,
     }
@@ -2558,16 +2558,16 @@ mod tests {
     impl AccepterEvent for TelnetReflector {
 	// No need for parmlog, InitialTelnetReflectorEv handled that.
 
-        fn new_connection(&self, g: Arc<Gensio>) -> i32 {
+        fn new_connection(&self, g: Gensio) -> i32 {
 	    let mut list = self.list.list.lock().unwrap();
 
 	    let d = TelnetReflectorInstData { ..Default::default() };
-	    let inst = TelnetReflectorInst { g: g.clone(),
+	    let inst = TelnetReflectorInst { g: g,
 					     list: self.list.clone(),
 					     d: Mutex::new(d) };
 	    let inst = Arc::new(inst);
-	    g.set_handler(inst.clone());
-	    g.read_enable(true);
+	    inst.g.set_handler(inst.clone());
+	    inst.g.read_enable(true);
 	    list.push(inst);
 	    0
         }
@@ -2584,12 +2584,12 @@ mod tests {
         }
 
 	// Refuse connections until we are ready.
-        fn new_connection(&self, _g: Arc<Gensio>) -> i32 {
+        fn new_connection(&self, _g: Gensio) -> i32 {
             GE_NOTSUP
         }
     }
 
-    fn new_telnet_reflector(o: &Arc<osfuncs::OsFuncs>)
+    fn new_telnet_reflector(o: &osfuncs::OsFuncs)
 			    -> Result<Arc<TelnetReflector>, i32> {
         let a = new_accepter("telnet(rfc2217),tcp,localhost,0".to_string(),
                              o, Arc::new(InitialTelnetReflectorEv{}))?;
