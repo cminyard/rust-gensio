@@ -10,7 +10,7 @@ use std::ffi;
 use std::panic;
 pub mod raw;
 
-/// Used to refcount gensio_os_funcs.
+// Used to refcount gensio_os_funcs.
 struct IOsFuncs {
     log_data: *mut GensioLogHandlerData,
     pub o: *const raw::gensio_os_funcs,
@@ -218,6 +218,12 @@ impl OsFuncs {
 	}
     }
 
+    /// Call this to setup a thread with the proper signal handlers
+    /// and such to work inside the gensio library.  Any threads you
+    /// create through the gensio library will already be correct, and
+    /// the proc_setup function does this processing, too.  In general,
+    /// and threads you create from a gensio thread using OS operations
+    /// will also be set up correctly.
     pub fn thread_setup(&self) -> Result<(), i32> {
 	let err = unsafe { raw::gensio_os_thread_setup(self.o.o) };
 	match err {
@@ -226,6 +232,8 @@ impl OsFuncs {
 	}
     }
 
+    /// Register a callback to be called when a process termination
+    /// signal is received.
     pub fn register_term_handler(&self, handler: Arc<dyn GensioTermHandler>)
                                  -> Result<(), i32> {
         let proc_data;
@@ -255,6 +263,7 @@ impl OsFuncs {
         }
     }
 
+    /// Register a callback to be called when a SIGHUP is received.
     pub fn register_hup_handler(&self, handler: Arc<dyn GensioHupHandler>)
                                  -> Result<(), i32> {
         let proc_data;
@@ -285,6 +294,8 @@ impl OsFuncs {
         }
     }
 
+    /// Register a callback to be called when the console window gets
+    /// resized.
     pub fn register_winsize_handler(&self, console_iod: *const raw::gensio_iod,
                                     handler: Arc<dyn GensioWinsizeHandler>)
                                     -> Result<(), i32> {
@@ -380,7 +391,8 @@ impl OsFuncs {
 	self.o.o
     }
 
-    /// Call gensio_os_funcs_zalloc()
+    /// Call gensio_os_funcs_zalloc().  This is really for internal
+    /// use only.
     pub fn zalloc(&self, size: usize) -> *mut ffi::c_void {
         unsafe { raw::gensio_os_funcs_zalloc(self.o.o, size as raw::gensiods) }
     }
@@ -508,6 +520,7 @@ impl Drop for TimerData {
     }
 }
 
+/// A timer for waiting for things to happen.
 pub struct Timer {
     t: *const raw::gensio_timer,
     d: *mut TimerData
@@ -591,7 +604,7 @@ impl Timer {
     // FIXME - there is no absolute time.  It may not be necessary,
     // but could be added.
 
-    /// Stop a timer
+    /// Stop a timer.
     pub fn stop(&self) -> Result<(), i32> {
 	let err = unsafe {
 	    raw::gensio_os_funcs_stop_timer((*self.d).o.o, self.t)
@@ -602,7 +615,7 @@ impl Timer {
 	}
     }
 
-    /// Stop a timer
+    /// Stop a timer and call a callback when the stop completes.
     pub fn stop_with_done(&self, cb: Arc<dyn TimerStopDoneHandler>)
 			  -> Result<(), i32> {
 	unsafe {
@@ -688,7 +701,7 @@ impl Drop for Timer {
 
 /// Runner callbacks will need to implement this trait.
 pub trait RunnerHandler {
-    /// Report that the operation (close) has completed.
+    /// The runner callback calls this.
     fn runner(&self);
 }
 
@@ -697,6 +710,7 @@ struct RunnerData {
     handler: Arc<dyn RunnerHandler>,
 }
 
+/// A type for running callbacks in base context.
 pub struct Runner {
     r: *const raw::gensio_runner,
     d: *mut RunnerData
@@ -716,7 +730,7 @@ extern "C" fn runner_handler(r: *const raw::gensio_runner,
 }
 
 impl Runner {
-    /// Start timer relative
+    /// Run the runner
     pub fn run(&self) -> Result<(), i32> {
 	let err = unsafe {
 	    raw::gensio_os_funcs_run((*self.d).o.o, self.r)
