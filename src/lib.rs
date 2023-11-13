@@ -486,12 +486,14 @@ fn new_gensio_data(o: &osfuncs::OsFuncs, cb: Arc<dyn Event>,
  }
 
 fn new_gensio(o: &osfuncs::OsFuncs, g: *const raw::gensio,
-	      cb: Arc<dyn Event>,
-	      state: GensioState) -> Result<Gensio, i32>
+	      cb: Arc<dyn Event>, state: GensioState,
+	      d: Option<*mut GensioData>) -> Result<Gensio, i32>
 {
-    let d = Box::new(new_gensio_data(o, cb, state)?);
-    Ok(Gensio { g: g,
-		d: Box::into_raw(d) })
+    let d = match d {
+	Some(d) => d,
+	None => Box::into_raw(Box::new(new_gensio_data(o, cb, state)?))
+    };
+    Ok(Gensio { g: g, d: d })
 }
 
 fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
@@ -547,7 +549,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    let g2 = buf as *const raw::gensio;
 	    let cb = Arc::new(DummyEvHndl{ });
 	    let o = unsafe {(*g).o.clone() };
-	    let new_g = match new_gensio(&o, g2, cb, GensioState::Open) {
+	    let new_g = match new_gensio(&o, g2, cb, GensioState::Open, None) {
 		Ok(g) => g,
 		Err(e) => return e
 	    };
@@ -778,30 +780,29 @@ pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
 	Err(_) => return Err(GE_INVAL)
     };
     // Create a temporary data item so str_to_gensio can report parmlogs.
-    let dt = Box::new(new_gensio_data(&o.clone(), cb.clone(),
-                                      GensioState::Closed));
-    let dt = Box::into_raw(dt);
+    let gd = Box::new(new_gensio_data(&o.clone(), cb.clone(),
+                                      GensioState::Closed)?);
+    let gd = Box::into_raw(gd);
     let err = unsafe {
 	raw::str_to_gensio(s.as_ptr(), o.raw(), evhndl,
-			   dt as *mut ffi::c_void, &g)
+			   gd as *mut ffi::c_void, &g)
     };
-    let _dt = unsafe {Box::from_raw(dt) }; // Free our original box
     let rv = match err {
 	0 => {
 	    let new_g = match new_gensio(&o.clone(), g, cb.clone(),
-					 GensioState::Closed) {
+					 GensioState::Closed, Some(gd)) {
 		Ok(g) => g,
 		Err(e) => {
 		    unsafe { raw::gensio_free(g); }
 		    return Err(e);
 		}
 	    };
-	    unsafe {
-		raw::gensio_set_user_data(new_g.g, new_g.d as *mut ffi::c_void);
-	    }
 	    Ok(new_g)
 	}
-	_ => Err(err)
+	_ => {
+	    unsafe { drop(Box::from_raw(gd)) }; // Free our original box
+	    Err(err)
+	}
     };
     rv
 }
@@ -1494,7 +1495,8 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    let g = data as *const raw::gensio;
 	    let cb = Arc::new(DummyEvHndl{ });
 	    let o = unsafe { (*a).o.clone() };
-	    let new_g = match new_gensio(&o, g, cb.clone(), GensioState::Open) {
+	    let new_g = match new_gensio(&o, g, cb.clone(), GensioState::Open,
+					 None) {
 		Ok(g) => g,
 		Err(e) => return e
 	    };
