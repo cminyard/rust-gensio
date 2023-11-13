@@ -412,8 +412,8 @@ impl std::fmt::Debug for Gensio {
     }
 }
 
-// Convert an auxdata, like from a read call, to a vector of strings.
-fn auxtovec(auxdata: *const *const ffi::c_char) -> Option<Vec<String>> {
+/// Convert an auxdata, like from a read call, to a vector of strings.
+pub fn auxtovec(auxdata: *const *const ffi::c_char) -> Option<Vec<String>> {
     if auxdata == std::ptr::null() {
 	None
     } else {
@@ -433,15 +433,15 @@ fn auxtovec(auxdata: *const *const ffi::c_char) -> Option<Vec<String>> {
     }
 }
 
-// Convert a vector of strings to a vector of pointers to CString raw
-// values.  You use as_ptr() to get a pointer to the array for
-// something to pass into a C function that takes char **.  You must
-// call auxfree() with the returned value, which will consume it and
-// free the data.
-fn vectoaux(vi: &[String]) -> Result<Vec<*mut ffi::c_char>, i32> {
+/// Convert a vector of strings to a vector of pointers to CString raw
+/// values.  You use as_ptr() to get a pointer to the array for
+/// something to pass into a C function that takes char **.  You must
+/// call auxfree() with the returned value, which will consume it and
+/// free the data.
+pub fn vectoaux(vi: &[&str]) -> Result<Vec<*mut ffi::c_char>, i32> {
     let mut vo: Vec<*mut ffi::c_char> = Vec::new();
     for i in vi {
-	let cs = match ffi::CString::new(i.clone()) {
+	let cs = match ffi::CString::new(i.to_string()) {
 	    Ok(v) => v,
 	    Err(_) => return Err(GE_INVAL)
 	};
@@ -911,7 +911,7 @@ impl Gensio {
     /// Write some data to the gensio.  On success, the number of
     /// bytes written is returned.  On failure an error code is
     /// returned.
-    pub fn write(&self, data: &[u8], auxdata: Option<&[String]>)
+    pub fn write(&self, data: &[u8], auxdata: Option<&[&str]>)
 		 -> Result<u64, i32> {
 	let mut count: GensioDS = 0;
 	let a1 = match auxdata {
@@ -2017,7 +2017,7 @@ mod tests {
 	g.open(e.clone()).expect("Couldn't open genio");
 	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	g.read_enable(true);
-	let v1 = vec!["t1".to_string(), "t2".to_string()];
+	let v1 = vec!["t1", "t2"];
 	let count = g.write(&b"teststr".to_vec()[..], Some(&v1))
 			    .expect("Write failed");
 	assert_eq!(count, 7);
