@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::Weak;
 use std::time::Duration;
 use std::ffi;
 use std::panic;
@@ -12,17 +13,31 @@ pub mod raw;
 /// Used to refcount gensio_os_funcs.
 pub struct IOsFuncs {
     log_data: *mut GensioLogHandlerData,
-    pub o: *const raw::gensio_os_funcs
+    pub o: *const raw::gensio_os_funcs,
+    proc_data: Mutex<*const raw::gensio_os_proc_data>,
+    term_handler: Arc<GensioTermHandlerData>,
+    hup_handler: Arc<GensioHupHandlerData>,
+    winsize_handler: Arc<GensioWinsizeHandlerData>,
 }
 
 impl Drop for IOsFuncs {
     fn drop(&mut self) {
-	unsafe {
-	    if self.log_data != std::ptr::null_mut() {
-		drop(Box::from_raw(self.log_data));
-	    }
-	    raw::gensio_rust_cleanup(self.o);
-	    raw::gensio_os_funcs_free(self.o);
+        {
+            let l_proc_data = self.proc_data.lock().unwrap();
+            let proc_data = *l_proc_data;
+            if proc_data != std::ptr::null() {
+                unsafe {
+		    raw::gensio_os_proc_cleanup(proc_data);
+	        }
+            }
+
+            unsafe {
+	        if self.log_data != std::ptr::null_mut() {
+		    drop(Box::from_raw(self.log_data));
+	        }
+	        raw::gensio_rust_cleanup(self.o);
+	        raw::gensio_os_funcs_free(self.o);
+            }
 	}
     }
 }
@@ -31,10 +46,6 @@ impl Drop for IOsFuncs {
 /// pretty much anything with gensio.
 pub struct OsFuncs {
     o: Arc<IOsFuncs>,
-    proc_data: *const raw::gensio_os_proc_data,
-    term_handler: Arc<GensioTermHandlerData>,
-    hup_handler: Arc<GensioHupHandlerData>,
-    winsize_handler: Arc<GensioWinsizeHandlerData>,
 }
 
 /// Allocate an OsFuncs structure.  This takes a log handler for
@@ -54,14 +65,17 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
 		raw::gensio_rust_set_log(o, log_handler,
 					 d as *mut ffi::c_void);
 	    }
-            Ok(OsFuncs { o: Arc::new(IOsFuncs {log_data: d, o: o}),
-			 proc_data: std::ptr::null(),
-                         term_handler: Arc::new(GensioTermHandlerData
-                                                {cb: Mutex::new(None)}),
-                         winsize_handler: Arc::new(GensioWinsizeHandlerData
-                                                   {cb: Mutex::new(None)}),
-                         hup_handler: Arc::new(GensioHupHandlerData
-                                               {cb: Mutex::new(None)})})
+            let ios = IOsFuncs {
+                log_data: d, o: o,
+		proc_data: Mutex::new(std::ptr::null()),
+                term_handler: Arc::new(GensioTermHandlerData
+                                       {cb: Mutex::new(None)}),
+                winsize_handler: Arc::new(GensioWinsizeHandlerData
+                                          {cb: Mutex::new(None)}),
+                hup_handler: Arc::new(GensioHupHandlerData
+                                      {cb: Mutex::new(None)})
+            };
+            Ok(OsFuncs { o: Arc::new(ios) })
 	}
 	_ => Err(err)
     }
@@ -100,14 +114,19 @@ pub trait GensioTermHandler {
 }
 
 struct GensioTermHandlerData {
-    cb: Mutex<Option<Arc<dyn GensioTermHandler>>>
+    cb: Mutex<Option<Weak<dyn GensioTermHandler>>>
 }
 
 fn i_term_handler(data: *mut ffi::c_void) {
     let d = data as *mut GensioTermHandlerData;
+    let cb;
     match *unsafe {(*d).cb.lock().unwrap() } {
+        None => return,
+        Some(ref icb) => cb = icb.upgrade()
+    }
+    match cb {
         None => (),
-        Some(ref cb) => cb.term_sig()
+        Some(cb) => cb.term_sig()
     }
 }
 
@@ -123,14 +142,19 @@ pub trait GensioHupHandler {
 }
 
 struct GensioHupHandlerData {
-    cb: Mutex<Option<Arc<dyn GensioHupHandler>>>
+    cb: Mutex<Option<Weak<dyn GensioHupHandler>>>
 }
 
 fn i_hup_handler(data: *mut ffi::c_void) {
     let d = data as *mut GensioHupHandlerData;
+    let cb;
     match *unsafe {(*d).cb.lock().unwrap() } {
+        None => return,
+        Some(ref icb) => cb = icb.upgrade()
+    }
+    match cb {
         None => (),
-        Some(ref cb) => cb.hup_sig()
+        Some(cb) => cb.hup_sig()
     }
 }
 
@@ -146,15 +170,20 @@ pub trait GensioWinsizeHandler {
 }
 
 struct GensioWinsizeHandlerData {
-    cb: Mutex<Option<Arc<dyn GensioWinsizeHandler>>>
+    cb: Mutex<Option<Weak<dyn GensioWinsizeHandler>>>
 }
 
 fn i_winsize_handler(x_chrs: i32, y_chrs: i32, x_bits: i32, y_bits: i32,
                      data: *mut ffi::c_void) {
     let d = data as *mut GensioWinsizeHandlerData;
+    let cb;
     match *unsafe {(*d).cb.lock().unwrap() } {
+        None => return,
+        Some(ref icb) => cb = icb.upgrade()
+    }
+    match cb {
         None => (),
-        Some(ref cb) => cb.winsize_sig(x_chrs, y_chrs, x_bits, y_bits)
+        Some(cb) => cb.winsize_sig(x_chrs, y_chrs, x_bits, y_bits)
     }
 }
 
@@ -176,10 +205,15 @@ impl OsFuncs {
     /// The cleanup function is called automatically as part of the
     /// OsFuncs automatic cleanup.
     pub fn proc_setup(&self) -> Result<(), i32> {
+        let mut proc_data = self.o.proc_data.lock().unwrap();
+        let new_proc_data: *const raw::gensio_os_proc_data = std::ptr::null();
 	let err = unsafe { raw::gensio_os_proc_setup(self.o.o,
-						     &self.proc_data) };
+						     &new_proc_data) };
 	match err {
-	    0 => Ok(()),
+	    0 => {
+                *proc_data = new_proc_data;
+                Ok(())
+            }
 	    _ => Err(err)
 	}
     }
@@ -194,24 +228,27 @@ impl OsFuncs {
 
     pub fn register_term_handler(&self, handler: Arc<dyn GensioTermHandler>)
                                  -> Result<(), i32> {
-        if self.proc_data == std::ptr::null() {
+        let proc_data;
+        {
+            let l_proc_data = self.o.proc_data.lock().unwrap();
+            proc_data = *l_proc_data;
+        }
+        if proc_data == std::ptr::null() {
             return Err(crate::GE_NOTREADY);
         }
 
-        let mut d = self.term_handler.cb.lock().unwrap();
+        let mut d = self.o.term_handler.cb.lock().unwrap();
         match *d {
             None => (),
             Some(_) => return Err(crate::GE_INUSE)
         }
 
-        *d = Some(handler.clone());
-        let err;
-        unsafe {
-            err = raw::gensio_os_proc_register_term_handler(
-                self.proc_data,
-                term_handler,
-                Arc::as_ptr(&self.term_handler) as *mut ffi::c_void);
-        }
+        *d = Some(Arc::downgrade(&handler));
+        let err = unsafe {
+            raw::gensio_os_proc_register_term_handler(
+                proc_data, term_handler,
+                Arc::as_ptr(&self.o.term_handler) as *mut ffi::c_void)
+        };
         match err {
             0 => Ok(()),
             _ => Err(err)
@@ -220,23 +257,27 @@ impl OsFuncs {
 
     pub fn register_hup_handler(&self, handler: Arc<dyn GensioHupHandler>)
                                  -> Result<(), i32> {
-        if self.proc_data == std::ptr::null() {
+        let proc_data;
+        {
+            let l_proc_data = self.o.proc_data.lock().unwrap();
+            proc_data = *l_proc_data;
+        }
+        if proc_data == std::ptr::null() {
             return Err(crate::GE_NOTREADY);
         }
 
-        let mut d = self.hup_handler.cb.lock().unwrap();
+        let mut d = self.o.hup_handler.cb.lock().unwrap();
         match *d {
             None => (),
             Some(_) => return Err(crate::GE_INUSE)
         }
 
-        *d = Some(handler.clone());
+        *d = Some(Arc::downgrade(&handler));
         let err;
         unsafe {
             err = raw::gensio_os_proc_register_reload_handler(
-                self.proc_data,
-                hup_handler,
-                Arc::as_ptr(&self.hup_handler) as *mut ffi::c_void);
+                proc_data, hup_handler,
+                Arc::as_ptr(&self.o.hup_handler) as *mut ffi::c_void);
         }
         match err {
             0 => Ok(()),
@@ -247,24 +288,27 @@ impl OsFuncs {
     pub fn register_winsize_handler(&self, console_iod: *const raw::gensio_iod,
                                     handler: Arc<dyn GensioWinsizeHandler>)
                                     -> Result<(), i32> {
-        if self.proc_data == std::ptr::null() {
+        let proc_data;
+        {
+            let l_proc_data = self.o.proc_data.lock().unwrap();
+            proc_data = *l_proc_data;
+        }
+        if proc_data == std::ptr::null() {
             return Err(crate::GE_NOTREADY);
         }
 
-        let mut d = self.winsize_handler.cb.lock().unwrap();
+        let mut d = self.o.winsize_handler.cb.lock().unwrap();
         match *d {
             None => (),
             Some(_) => return Err(crate::GE_INUSE)
         }
 
-        *d = Some(handler.clone());
+        *d = Some(Arc::downgrade(&handler));
         let err;
         unsafe {
             err = raw::gensio_os_proc_register_winsize_handler(
-                self.proc_data,
-                console_iod,
-                winsize_handler,
-                Arc::as_ptr(&self.winsize_handler) as *mut ffi::c_void);
+                proc_data, console_iod, winsize_handler,
+                Arc::as_ptr(&self.o.winsize_handler) as *mut ffi::c_void);
         }
         match err {
             0 => Ok(()),
@@ -337,14 +381,9 @@ impl OsFuncs {
     }
 }
 
-impl Drop for OsFuncs {
-    fn drop(&mut self) {
-        if self.proc_data != std::ptr::null() {
-            unsafe {
-		raw::gensio_os_proc_cleanup(self.proc_data);
-	    }
-	    // o will be freed by the Arc<>
-	}
+impl Clone for OsFuncs {
+    fn clone(&self) -> Self {
+        return OsFuncs { o: self.o.clone() }
     }
 }
 
