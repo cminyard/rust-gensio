@@ -19,8 +19,12 @@ pub const GENSIO_NETTYPE_IPV6: i32 = 2;
 pub const GENSIO_NETTYPE_UNIX: i32 = 3;
 pub const GENSIO_NETTYPE_AX25: i32 = 4;
 
-pub fn new(ai: *const raw::gensio_addr) -> Addr {
-    Addr { ai: ai }
+pub fn new(ai: *const raw::gensio_addr) -> Result<Addr, i32> {
+    let naddr = unsafe { raw::gensio_addr_dup(ai) };
+    if ai == std::ptr::null() {
+	return Err(crate::GE_NOMEM);
+    }
+    Ok(Addr { ai: naddr })
 }
 
 impl Drop for Addr {
