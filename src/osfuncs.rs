@@ -11,7 +11,7 @@ use std::panic;
 pub mod raw;
 
 /// Used to refcount gensio_os_funcs.
-pub struct IOsFuncs {
+struct IOsFuncs {
     log_data: *mut GensioLogHandlerData,
     pub o: *const raw::gensio_os_funcs,
     proc_data: Mutex<*const raw::gensio_os_proc_data>,
@@ -376,8 +376,13 @@ impl OsFuncs {
 
     /// Get a reference to the os_funcs that we can keep and use.  For
     /// internal use only.
-    pub fn raw(&self) -> Arc<IOsFuncs> {
-	self.o.clone()
+    pub fn raw(&self) -> *const raw::gensio_os_funcs {
+	self.o.o
+    }
+
+    /// Call gensio_os_funcs_zalloc()
+    pub fn zalloc(&self, size: usize) -> *mut ffi::c_void {
+        unsafe { raw::gensio_os_funcs_zalloc(self.o.o, size as raw::gensiods) }
     }
 }
 
@@ -409,28 +414,58 @@ impl Waiter {
     /// If that many wake calls occur, this returns success with a
     /// duration of how much time is left.  On a timeout it returns a
     /// GE_TIMEDOUT error.  Other errors may occur.
-    pub fn wait(&self, count: u32, timeout: &Duration)
-		-> Result<Duration, i32> {
-	let t = raw::gensio_time{ secs: timeout.as_secs() as i64,
-				  nsecs: timeout.subsec_nanos() as i32 };
+    pub fn wait(&self, count: u32, timeout: Option<&Duration>)
+		-> Result<Option<Duration>, i32> {
+	let t: *const raw::gensio_time;
+        let mut to = raw::gensio_time { secs: 0, nsecs: 0 };
+        match timeout {
+            None => t = std::ptr::null(),
+            Some(d) => {
+                to.secs = d.as_secs() as i64;
+		to.nsecs = d.subsec_nanos() as i32;
+                t = &to;
+            }
+        }
 	let err = unsafe { raw::gensio_os_funcs_wait(self.o.o, self.w,
-						     count, &t) };
+						     count, t) };
 	match err {
-	    0 => Ok(Duration::new(t.secs as u64, t.nsecs as u32)),
+	    0 => {
+                if t == std::ptr::null() {
+                    Ok(None)
+                } else {
+                    Ok(Some(unsafe {Duration::new((*t).secs as u64,
+                                                  (*t).nsecs as u32)}))
+                }
+            }
 	    _ => Err(err)
 	}
     }
 
     /// Like wait, but if a signal is received, this will return a
     /// GE_INTERRUPTED error.
-    pub fn wait_intr(&self, count: u32, timeout: &Duration)
-		     -> Result<Duration, i32> {
-	let t = raw::gensio_time{ secs: timeout.as_secs() as i64,
-				  nsecs: timeout.subsec_nanos() as i32 };
+    pub fn wait_intr(&self, count: u32, timeout: Option<&Duration>)
+		     -> Result<Option<Duration>, i32> {
+	let t: *const raw::gensio_time;
+        let mut to = raw::gensio_time { secs: 0, nsecs: 0 };
+        match timeout {
+            None => t = std::ptr::null(),
+            Some(d) => {
+                to.secs = d.as_secs() as i64;
+		to.nsecs = d.subsec_nanos() as i32;
+                t = &to;
+            }
+        }
 	let err = unsafe { raw::gensio_os_funcs_wait_intr(self.o.o, self.w,
-							  count, &t) };
+							  count, t) };
 	match err {
-	    0 => Ok(Duration::new(t.secs as u64, t.nsecs as u32)),
+	    0 => {
+                if t == std::ptr::null() {
+                    Ok(None)
+                } else {
+                    Ok(Some(unsafe {Duration::new((*t).secs as u64,
+                                                  (*t).nsecs as u32)}))
+                }
+            }
 	    _ => Err(err)
 	}
     }
@@ -722,7 +757,7 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate Waiter");
 
 	drop(o);
-	assert_eq!(w.wait(1, &Duration::new(0, 0)), Err(crate::GE_TIMEDOUT));
+	assert_eq!(w.wait(1, Some(&Duration::new(0, 0))), Err(crate::GE_TIMEDOUT));
     }
 
     struct HandleTimeout1 {
@@ -747,7 +782,7 @@ mod tests {
 
 	t.start(&Duration::new(0, 1000)).expect("Couldn't start timer");
 
-	match h.w.wait(1, &Duration::new(1, 0)) {
+	match h.w.wait(1, Some(&Duration::new(1, 0))) {
 	    Ok(_) => (),
 	    Err(e) => assert!(e == 0)
 	}
@@ -807,7 +842,7 @@ mod tests {
         }
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
 	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
-	match s2.w.wait(1, &Duration::new(1, 0)) {
+	match s2.w.wait(1, Some(&Duration::new(1, 0))) {
 	    Ok(_) => (),
 	    Err(e) => assert!(e == 0)
 	}
@@ -891,7 +926,7 @@ mod tests {
         // functions.
         let mut count = 0;
         loop {
-	    let rv = h.w.wait(1, &Duration::new(1, 0));
+	    let rv = h.w.wait(1, Some(&Duration::new(1, 0)));
             if rv == Err(crate::GE_TIMEDOUT) && count == 0 {
                 count += 1;
                 continue;
@@ -928,7 +963,7 @@ mod tests {
         // See note in term_test on this loop.
         let mut count = 0;
         loop {
-	    let rv = h.w.wait(1, &Duration::new(1, 0));
+	    let rv = h.w.wait(1, Some(&Duration::new(1, 0)));
             if rv == Err(crate::GE_TIMEDOUT) && count == 0 {
                 count += 1;
                 continue;
@@ -963,7 +998,7 @@ mod tests {
         let o2;
         unsafe {
             o2 = o.raw();
-            iod = raw::gensio_add_iod(o2.o, raw::GENSIO_IOD_CONSOLE, 0);
+            iod = raw::gensio_add_iod(o2, raw::GENSIO_IOD_CONSOLE, 0);
             assert!(iod != std::ptr::null());
             o.register_winsize_handler(iod, h.clone())
                 .expect("Couldn't register winsize handler");
@@ -974,7 +1009,7 @@ mod tests {
         // See note in term_test on this loop.
         let mut count = 0;
         loop {
-	    let rv = h.w.wait(1, &Duration::new(1, 0));
+	    let rv = h.w.wait(1, Some(&Duration::new(1, 0)));
             if rv == Err(crate::GE_TIMEDOUT) && count == 0 {
                 count += 1;
                 continue;
@@ -986,7 +1021,7 @@ mod tests {
             break;
 	};
         unsafe {
-            raw::gensio_release_iod(o2.o, iod);
+            raw::gensio_release_iod(o2, iod);
         }
     }
 
@@ -1011,7 +1046,7 @@ mod tests {
 
 	t.run().expect("Couldn't start timer");
 
-	match h.w.wait(1, &Duration::new(1, 0)) {
+	match h.w.wait(1, Some(&Duration::new(1, 0))) {
 	    Ok(_) => (),
 	    Err(e) => assert!(e == 0)
 	}

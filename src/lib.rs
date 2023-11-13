@@ -248,8 +248,10 @@ fn i_close_done(_io: *const raw::gensio, user_data: *mut ffi::c_void) {
 	GensioState::WaitClose => {
 	    // The Gensio is being dropped and waiting for us to complete.
 	    unsafe {
-		osfuncs::raw::gensio_os_funcs_wake((*d.myptr).o.o,
-						   (*d.myptr).close_waiter);
+                match &(*d.myptr).close_waiter {
+                    Some(w) => _ = w.wake(),
+                    None => ()
+                }
 	    }
 	}
 	_ => *state = GensioState::Closed,
@@ -395,12 +397,12 @@ enum GensioState {
 
 /// A gensio
 pub struct Gensio {
-    o: Arc<osfuncs::IOsFuncs>, // Used to keep the os funcs alive.
+    o: osfuncs::OsFuncs, // Used to keep the os funcs alive.
     g: *const raw::gensio,
     cb: Arc<dyn Event>,
 
     state: Mutex<GensioState>,
-    close_waiter: *const osfuncs::raw::gensio_waiter,
+    close_waiter: Option<osfuncs::Waiter>,
 
     // Points to the structure that is passed to the callback, which
     // is different than what is returned to the user.
@@ -478,21 +480,16 @@ impl Event for DummyEvHndl {
     }
 }
 
-fn new_gensio(o: &Arc<osfuncs::IOsFuncs>, g: *const raw::gensio,
+fn new_gensio(o: &osfuncs::OsFuncs, g: *const raw::gensio,
 	      cb: Arc<dyn Event>,
 	      state: GensioState,
 	      myptr: *mut Gensio) -> Result<Gensio, i32>
 {
     let close_waiter;
     if myptr == std::ptr::null_mut() {
-	close_waiter = unsafe {
-	    osfuncs::raw::gensio_os_funcs_alloc_waiter(o.o)
-	};
-	if close_waiter == std::ptr::null() {
-	    return Err(GE_NOMEM);
-	}
+	close_waiter = Some(o.new_waiter()?);
     } else {
-	close_waiter = std::ptr::null_mut();
+	close_waiter = None;
     }
     Ok(Gensio { o: o.clone(),
 		g: g,
@@ -640,15 +637,19 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		Some(v) => v
 	    };
 	    let len = src.len();
-	    let dst = unsafe {
-		osfuncs::raw::gensio_os_funcs_zalloc((*g).o.o, len as GensioDS)
-	    };
+	    let dst = unsafe { (*g).o.zalloc(len) };
+            unsafe {
+                let bufptr = buf as *mut *mut ffi::c_void;
+                *bufptr = dst;
+            }
 	    let dst = dst as *mut u8;
 	    let dst = unsafe {std::slice::from_raw_parts_mut(dst, len) };
 	    for i in 0 .. len - 1 {
 		dst[i] = src[i];
 	    }
-	    unsafe { *buflen = len as GensioDS; }
+	    unsafe {
+                *buflen = len as GensioDS;
+            }
 	}
 	raw::GENSIO_EVENT_2FA_VERIFY => {
 	    let data = buf as *const u8;
@@ -782,23 +783,22 @@ extern "C" fn evhndl(io: *const raw::gensio, user_data: *const ffi::c_void,
 pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
 	   -> Result<Gensio, i32>
 {
-    let or = o.raw().clone();
     let g: *const raw::gensio = std::ptr::null();
     let s = match ffi::CString::new(s) {
 	Ok(s) => s,
 	Err(_) => return Err(GE_INVAL)
     };
     // Create a temporary data item so str_to_gensio can report parmlogs.
-    let dt = Box::new(new_gensio(&or, g, cb.clone(), GensioState::Closed,
+    let dt = Box::new(new_gensio(&o.clone(), g, cb.clone(), GensioState::Closed,
 				 std::ptr::null_mut()));
     let dt = Box::into_raw(dt);
     let err = unsafe {
-	raw::str_to_gensio(s.as_ptr(), or.o, evhndl,
+	raw::str_to_gensio(s.as_ptr(), o.raw(), evhndl,
 			   dt as *mut ffi::c_void, &g)
     };
     let rv = match err {
 	0 => {
-	    let new_g = match new_gensio(&or, g, cb.clone(),
+	    let new_g = match new_gensio(&o.clone(), g, cb.clone(),
 					 GensioState::Closed,
 					 std::ptr::null_mut()) {
 		Ok(g) => g,
@@ -812,7 +812,8 @@ pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
 	    unsafe {
 		raw::gensio_set_user_data((*d).g, d as *mut ffi::c_void);
 	    }
-	    let new_g = match new_gensio(&or, g, cb, GensioState::Closed, d) {
+	    let new_g = match new_gensio(&o.clone(), g, cb,
+                                         GensioState::Closed, d) {
 		Ok(g) => g,
 		Err(e) => {
 		    unsafe { raw::gensio_free(g); }
@@ -1411,17 +1412,13 @@ impl Drop for Gensio {
 		    }
 		}
 		if do_wait {
-		    osfuncs::raw::gensio_os_funcs_wait(
-			self.o.o,
-			(*self.myptr).close_waiter, 1,
-			std::ptr::null());
+                    match &((*self.myptr).close_waiter) {
+                        None => panic!("close_waiter invalid"),
+                        Some(w) => _ = w.wait(1, None)
+                    }
 		}
 		raw::gensio_free(self.g);
 		drop(Box::from_raw(self.myptr));
-	    }
-	    if self.close_waiter != std::ptr::null() {
-		osfuncs::raw::gensio_os_funcs_free_waiter(
-		    self.o.o, self.close_waiter);
 	    }
 	}
     }
@@ -1482,12 +1479,12 @@ pub const GENSIO_ACC_CONTROL_TCPDNAME: u32 = 3;
 
 /// An accepter gensio for receiving connections.
 pub struct Accepter {
-    o: Arc<osfuncs::IOsFuncs>, // Used to keep the os funcs alive.
+    o: osfuncs::OsFuncs, // Used to keep the os funcs alive.
     a: *const raw::gensio_accepter,
     cb: Arc<dyn AccepterEvent>,
 
     state: Mutex<GensioState>,
-    close_waiter: *const osfuncs::raw::gensio_waiter,
+    close_waiter: Option<osfuncs::Waiter>,
 
     // Points to the structure that is passed to the callback, which
     // is different than what is returned to the user.
@@ -1655,7 +1652,6 @@ extern "C" fn acc_evhndl(acc: *const raw::gensio_accepter,
 pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
 		    cb: Arc<dyn AccepterEvent>)
 		    -> Result<Accepter, i32> {
-    let or = o.raw().clone();
     let a: *const raw::gensio_accepter = std::ptr::null();
     let s = match ffi::CString::new(s) {
 	Ok(s) => s,
@@ -1663,26 +1659,20 @@ pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
     };
     // Create a temporary data item so str_to_gensio_accepter can
     // report parmlogs.
-    let dt = Box::new(Accepter { o: or.clone(), a: std::ptr::null(),
+    let dt = Box::new(Accepter { o: o.clone(), a: std::ptr::null(),
 				 cb: cb.clone(),
 				 state: Mutex::new(GensioState::Closed),
-				 close_waiter: std::ptr::null(),
+				 close_waiter: None,
 				 myptr: std::ptr::null_mut() });
     let dt = Box::into_raw(dt);
     let err = unsafe {
-	raw::str_to_gensio_accepter(s.as_ptr(), or.o, acc_evhndl,
+	raw::str_to_gensio_accepter(s.as_ptr(), o.raw(), acc_evhndl,
 				    dt as *mut ffi::c_void, &a)
     };
     let rv = match err {
 	0 => {
-	    let close_waiter = unsafe {
-		osfuncs::raw::gensio_os_funcs_alloc_waiter(or.o)
-	    };
-	    if close_waiter == std::ptr::null() {
-		unsafe { raw::gensio_acc_free(a) };
-		return Err(GE_NOMEM);
-	    }
-	    let d = Box::new(Accepter { o: or.clone(), a: a, cb: cb.clone(),
+	    let close_waiter = Some(o.new_waiter()?);
+	    let d = Box::new(Accepter { o: o.clone(), a: a, cb: cb.clone(),
 					state: Mutex::new(GensioState::Closed),
 					close_waiter: close_waiter,
 					myptr: std::ptr::null_mut() });
@@ -1690,9 +1680,9 @@ pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
 	    unsafe {
 		raw::gensio_acc_set_user_data((*d).a, d as *mut ffi::c_void);
 	    }
-	    Ok(Accepter { o: or, a: a, cb: cb,
+	    Ok(Accepter { o: o.clone(), a: a, cb: cb,
 			  state: Mutex::new(GensioState::Closed),
-			  close_waiter: std::ptr::null(),
+			  close_waiter: None,
 			  myptr: d })
 	}
 	_ => Err(GE_INVAL)
@@ -1725,8 +1715,10 @@ fn i_acc_shutdown_done(_io: *const raw::gensio_accepter,
 	GensioState::WaitClose => {
 	    // The Gensio is being dropped and waiting for us to complete.
 	    unsafe {
-		osfuncs::raw::gensio_os_funcs_wake((*d.myptr).o.o,
-						   (*d.myptr).close_waiter);
+                match &((*d.myptr).close_waiter) {
+                    None => panic!("close_waiter missing"),
+                    Some(w) => _ = w.wake()
+                }
 	    }
 	}
 	_ => *state = GensioState::Closed,
@@ -1922,18 +1914,14 @@ impl Drop for Accepter {
 		    }
 		}
 		if do_wait {
-		    osfuncs::raw::gensio_os_funcs_wait(
-			self.o.o,
-			(*self.myptr).close_waiter, 1,
-			std::ptr::null());
+                    match &((*self.myptr).close_waiter) {
+                        None => panic!("close_waiter invalid"),
+                        Some(w) => _ = w.wait(1, None)
+                    }
 		}
 		raw::gensio_acc_shutdown_s(self.a);
 		raw::gensio_acc_free(self.a);
 		drop(Box::from_raw(self.myptr));
-	    }
-	    if self.close_waiter != std::ptr::null() {
-		osfuncs::raw::gensio_os_funcs_free_waiter(
-		    self.o.o, self.close_waiter);
 	    }
 	}
     }
@@ -2083,15 +2071,15 @@ mod tests {
 	let g = new("echo".to_string(), &o, e.clone())
 	    .expect("Couldn't alloc gensio");
 	g.open(e.clone()).expect("Couldn't open genio");
-	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	g.read_enable(true);
 	let v1 = vec!["t1".to_string(), "t2".to_string()];
 	let count = g.write(&b"teststr".to_vec()[..], Some(&v1))
 			    .expect("Write failed");
 	assert_eq!(count, 7);
-	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	g.close(Some(e.clone())).expect("Couldn't close gensio");
-	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
     }
 
     struct AccMutData {
@@ -2225,7 +2213,7 @@ mod tests {
 	    .expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
-	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	e1.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	// Let automatic cleanup happen.
     }
 
@@ -2256,7 +2244,7 @@ mod tests {
 	    expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
-	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	e1.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 
 	// Assign a handler for the new gensio
 	let e3;
@@ -2303,10 +2291,10 @@ mod tests {
 
 	g.close_s().expect("Close failed");
 	// Wait for the error from the other end.
-	e3.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	e3.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 
 	a.shutdown(Some(e1.clone())).expect("Shutdown failed");
-	e1.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	e1.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
     }
 
     struct TelnetReflectorInstList {
@@ -2662,7 +2650,7 @@ mod tests {
 	}
 	g.acontrol_str(0, GENSIO_CONTROL_SET, option, sval,
 		       Some(e.clone()), None).expect("Acontrol failed");
-	e.w.wait(1, &Duration::new(1, 0)).expect("Wait failed");
+	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
     }
 
     #[test]
