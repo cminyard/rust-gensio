@@ -4,6 +4,7 @@
 
 use std::ffi;
 use crate::addr::raw::gensio_addr;
+use crate::osfuncs;
 
 #[repr(C)]
 pub struct gensio_mdns;
@@ -45,12 +46,12 @@ pub type gensio_mdns_watch_done = extern "C" fn (w: *const gensio_mdns_watch,
 #[link(name = "gensiomdns")]
 extern "C" {
     #[allow(improper_ctypes)]
-    pub fn gensio_alloc_mdns(o: *const ffi::c_char,
+    pub fn gensio_alloc_mdns(o: *const osfuncs::raw::gensio_os_funcs,
 			     m: *const *const gensio_mdns) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_free_mdns(m: *const gensio_mdns,
-			    done: gensio_mdns_watch_done,
+			    done: gensio_mdns_done,
 			    cb_data: *mut ffi::c_void) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
@@ -70,7 +71,7 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     pub fn gensio_mdns_remove_service(s: *const gensio_mdns_service)
-				    -> ffi::c_int;
+				      -> ffi::c_int;
 
     #[allow(improper_ctypes)]
     pub fn gensio_mdns_add_watch(m: *const gensio_mdns,
