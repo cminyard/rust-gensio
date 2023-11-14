@@ -2,6 +2,10 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use std::ffi;
+use crate::GensioDS;
+use crate::osfuncs;
+
 pub mod raw;
 
 pub struct Addr {
@@ -25,6 +29,108 @@ pub fn new(ai: *const raw::gensio_addr) -> Result<Addr, i32> {
 	return Err(crate::GE_NOMEM);
     }
     Ok(Addr { ai: naddr })
+}
+
+pub fn from_bytes(o: osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
+		  -> Result<Addr, i32> {
+    let ai: *const raw::gensio_addr = std::ptr::null();
+    let rv = unsafe {
+	raw::gensio_addr_create(o.raw(), nettype as ffi::c_int,
+				buf.as_ptr() as *const ffi::c_void,
+				buf.len() as GensioDS,
+				port as ffi::c_uint, &ai)
+    };
+    if rv != 0 {
+	return Err(rv);
+    }
+    Ok(Addr { ai: ai })
+}
+
+impl Addr {
+    pub fn next(&self) -> bool {
+	unsafe { raw::gensio_addr_next(self.ai) != 0 }
+    }
+
+    pub fn rewind(&self) {
+	unsafe { raw::gensio_addr_rewind(self.ai) };
+    }
+
+    pub fn nettype(&self) -> i32 {
+	unsafe { raw::gensio_addr_get_nettype(self.ai) as i32 }
+    }
+
+    pub fn equal(&self, a2: &Addr, cmp_port: bool, cmp_all: bool) -> bool {
+	let p = match cmp_port { true => 1, false => 0 };
+	let a = match cmp_all { true => 1, false => 0 };
+	unsafe { raw::gensio_addr_equal(self.ai, a2.ai, p, a) != 0 }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+	let mut buf: Vec<u8> = Vec::new();
+	buf.push(0); // Ensure some data is there.
+	let mut len: GensioDS = 0;
+
+	unsafe {
+	    raw::gensio_addr_get_data(self.ai,
+				      buf.as_mut_ptr() as *mut ffi::c_void,
+				      &mut len)
+	};
+	buf.reserve(len as usize);
+	unsafe {
+	    raw::gensio_addr_get_data(self.ai,
+				      buf.as_mut_ptr() as *mut ffi::c_void,
+				      &mut len);
+	};
+	unsafe { buf.set_len(len as usize); }
+	buf
+    }
+
+}
+
+impl Clone for Addr {
+    fn clone(&self) -> Self {
+	let naddr = unsafe { raw::gensio_addr_dup(self.ai) };
+	if naddr == std::ptr::null() {
+	    panic!("Address clone failed");
+	}
+	Addr { ai: naddr }
+    }
+}
+
+impl ToString for Addr {
+    fn to_string(&self) -> String {
+	let mut buf: Vec<u8> = Vec::new();
+	buf.push(0);
+	let mut pos: GensioDS = 0;
+
+	let rv = unsafe {
+	    raw::gensio_addr_to_str(self.ai,
+				    buf.as_mut_ptr() as *mut ffi::c_char,
+				    &mut pos, 0)
+	};
+	if rv != 0 {
+	    panic!("Unable to convert address to string");
+	}
+	buf.reserve(pos as usize + 1);
+	pos = 0;
+	let rv = unsafe {
+	    raw::gensio_addr_to_str(self.ai,
+				    buf.as_mut_ptr() as *mut ffi::c_char,
+				    &mut pos, buf.capacity() as GensioDS)
+	};
+	if rv != 0 {
+	    panic!("Unable to convert address to string");
+	}
+	unsafe { buf.set_len(pos as usize); }
+	let cstr = ffi::CString::new(buf).expect("Invalid address string");
+	cstr.into_string().expect("Invalid address utf8")
+    }
+}
+
+impl PartialEq for Addr {
+    fn eq(&self, a2: &Addr) -> bool {
+	self.equal(a2, true, false)
+    }
 }
 
 impl Drop for Addr {

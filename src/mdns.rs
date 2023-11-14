@@ -283,7 +283,7 @@ pub trait WatchEvent {
 	     domain: Option<&str>,
 	     host:  Option<&str>,
 	     addr: Option<addr::Addr>,
-	     txt: Option<Vec<String>>);
+	     txt: Option<&[&str]>);
 }
 
 enum CloseState {
@@ -329,13 +329,21 @@ fn i_watch_event(_w: *const raw::gensio_mdns_watch,
     if addr == std::ptr::null() {
 	addro = None;
     } else {
-	addro = Some(addr::new(addr));
+	addro = Some(match addr::new(addr) {
+	    Ok(a) => a,
+	    Err(_) => return
+	});
     }
     let txt = crate::auxtovec(txt);
+    let txt2 = crate::auxvectostrvec(&txt);
+    let txt3 = match &txt2 {
+	None => None,
+	Some(t) => Some(t.as_slice())
+    };
     unsafe {
 	(*d).cb.watch(state as i32, iface as i32, ipdomain as i32,
 		      names, types, domains, hosts,
-		      addro, txt);
+		      addro, txt3);
     }
 }
 
@@ -433,22 +441,66 @@ mod tests {
 	}
     }
 
+    struct IWatchEventData {
+	do_check: bool,
+	waiting_gone: bool,
+	name: String,
+	mtype: String,
+	txt: Vec<String>,
+    }
+
     struct IWatchEvent {
 	w: osfuncs::Waiter,
+	d: Mutex<IWatchEventData>,
     }
 
     impl WatchEvent for IWatchEvent {
 	fn watch(&self,
-		 _state: i32,
+		 state: i32,
 		 _iface: i32,
 		 _ipdomain: i32,
-		 _name: Option<&str>,
-		 _mtype: Option<&str>,
+		 name: Option<&str>,
+		 mtype: Option<&str>,
 		 _domain: Option<&str>,
 		 _host:  Option<&str>,
 		 _addr: Option<addr::Addr>,
-		 _txt: Option<Vec<String>>) {
-	    _ = self.w.wake();
+		 txt: Option<&[&str]>) {
+	    let wake;
+	    let d = self.d.lock().unwrap();
+	    if !d.do_check {
+		return;
+	    }
+	    match state {
+		GENSIO_MDNS_WATCH_ALL_FOR_NOW => {
+		    return;
+		}
+		GENSIO_MDNS_WATCH_NEW_DATA => {
+		    wake = !d.waiting_gone;
+		}
+		GENSIO_MDNS_WATCH_DATA_GONE => {
+		    wake = d.waiting_gone;
+		}
+		_ => return,
+	    }
+
+	    //let a = _addr.expect("No address").to_string();
+	    //crate::puts(a.as_str());
+	    //crate::puts("\n");
+
+	    assert_eq!(name, Some(d.name.as_str()));
+	    assert_eq!(mtype, Some(d.mtype.as_str()));
+	    match txt {
+		None => panic!("txt should be present"),
+		Some(t) => {
+		    assert_eq!(t.len(), d.txt.len());
+		    for i in 0..t.len() {
+			assert_eq!(t[i], d.txt[i].as_str());
+		    }
+		}
+	    }
+	    if wake {
+		_ = self.w.wake();
+	    }
 	}
     }
 
@@ -480,7 +532,14 @@ mod tests {
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
 	let we = Arc::new(IWatchEvent {
-	    w: o.new_waiter().expect("Unable to allocate waiter")
+	    w: o.new_waiter().expect("Unable to allocate waiter"),
+	    d: Mutex::new(IWatchEventData {
+		do_check: true,
+		waiting_gone: false,
+		name: String::from("gensio1"),
+		mtype: String::from("_gensio_rusttest._tcp"),
+		txt: vec!["A=1".to_string(), "B=2".to_string()],
+	    }),
 	});
 	let w = m.new_watch(-1, addr::GENSIO_NETTYPE_UNSPEC, None,
 			    Some("=_gensio_rusttest._tcp"), None, None,
@@ -489,12 +548,17 @@ mod tests {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
 	let s = m.new_service(-1, addr::GENSIO_NETTYPE_UNSPEC, Some("gensio1"),
-			      Some("=_gensio_rusttest._tcp"), None, None,
+			      Some("_gensio_rusttest._tcp"), None, None,
 			      5001, Some(&["A=1", "B=2"]), se.clone())
 	    .expect("Unable to allocate watch");
 	se.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	we.w.wait(1, Some(&Duration::new(5, 0))).expect("Wait failed");
+	{
+	    let mut d = we.d.lock().unwrap();
+	    d.waiting_gone = true;
+	}
 	drop(s);
+	we.w.wait(1, Some(&Duration::new(5, 0))).expect("Wait failed");
 	let wd = Arc::new(IWatchDone {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
@@ -510,7 +574,14 @@ mod tests {
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
 	let we = Arc::new(IWatchEvent {
-	    w: o.new_waiter().expect("Unable to allocate waiter")
+	    w: o.new_waiter().expect("Unable to allocate waiter"),
+	    d: Mutex::new(IWatchEventData {
+		do_check: false,
+		waiting_gone: false,
+		name: String::from(""),
+		mtype: String::from(""),
+		txt: vec![],
+	    }),
 	});
 	let _w = m.new_watch(-1, addr::GENSIO_NETTYPE_UNSPEC, None,
 			     Some("=_gensio_rusttest2._tcp"), None, None,

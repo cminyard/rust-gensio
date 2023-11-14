@@ -221,13 +221,14 @@ pub trait OpDone {
 }
 
 extern "C" {
-    fn printf(s: *const ffi::c_char);
+    fn printf(s: *const ffi::c_char, s2: *const ffi::c_char);
 }
 
-pub fn printfit(s: &str) {
+pub fn puts(s: &str) {
     let s1 = ffi::CString::new(s).expect("CString::new failed");
+    let fmt = ffi::CString::new("%s").expect("CString::fmt failed");
     unsafe {
-       printf(s1.as_ptr());
+       printf(fmt.as_ptr(), s1.as_ptr());
     }
 }
 
@@ -276,13 +277,13 @@ pub trait Event {
     /// Report some received data.  The i32 return (first value in
     /// tuble) return is the error return, normally 0, and the u64
     /// (second value) is the number of bytes consumed.
-    fn read(&self, buf: &[u8], auxdata: &Option<Vec<String>>) -> (i32, usize);
+    fn read(&self, buf: &[u8], auxdata: Option<&[&str]>) -> (i32, usize);
 
     fn write_ready(&self) -> i32 {
 	GE_NOTSUP
     }
 
-    fn new_channel(&self, _g: Gensio, _auxdata: &Option<Vec<String>>)
+    fn new_channel(&self, _g: Gensio, _auxdata: Option<&[&str]>)
 		   -> i32 {
 	GE_NOTSUP
     }
@@ -433,6 +434,19 @@ pub fn auxtovec(auxdata: *const *const ffi::c_char) -> Option<Vec<String>> {
     }
 }
 
+pub fn auxvectostrvec(a: &Option<Vec<String>>) -> Option<Vec<&str>> {
+    match a {
+	None => None,
+	Some(a) =>  {
+	    let mut r: Vec<&str> = Vec::new();
+	    for i in a {
+		r.push(&i)
+	    }
+	    Some(r)
+	}
+    }
+}
+
 /// Convert a vector of strings to a vector of pointers to CString raw
 /// values.  You use as_ptr() to get a pointer to the array for
 /// something to pass into a C function that takes char **.  You must
@@ -471,7 +485,7 @@ impl Event for DummyEvHndl {
 	GE_NOTSUP
     }
 
-    fn read(&self, _buf: &[u8], _auxdata: &Option<Vec<String>>)
+    fn read(&self, _buf: &[u8], _auxdata: Option<&[&str]>)
 	    -> (i32, usize) {
 	(GE_NOTSUP, 0)
     }
@@ -538,8 +552,13 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		std::slice::from_raw_parts(buf as *mut u8, *buflen as usize)
 	    };
 	    let a = auxtovec(auxdata);
+	    let a2 = auxvectostrvec(&a);
+	    let a3 = match &a2 {
+		None => None,
+		Some(t) => Some(t.as_slice())
+	    };
 	    let count;
-	    (err, count) = unsafe { (*g).cb.read(b, &a) };
+	    (err, count) = unsafe { (*g).cb.read(b, a3) };
 	    unsafe { *buflen = count as GensioDS; }
 	}
 	raw::GENSIO_EVENT_WRITE_READY => {
@@ -557,8 +576,14 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		raw::gensio_set_callback(new_g.g, evhndl,
                                          new_g.d as *mut ffi::c_void);
 	    }
+	    let a = auxtovec(auxdata);
+	    let a2 = auxvectostrvec(&a);
+	    let a3 = match &a2 {
+		None => None,
+		Some(t) => Some(t.as_slice())
+	    };
 	    err = unsafe {
-		(*g).cb.new_channel(new_g, &auxtovec(auxdata))
+		(*g).cb.new_channel(new_g, a3)
 	    };
 	}
 	raw::GENSIO_EVENT_SEND_BREAK => {
@@ -1969,7 +1994,7 @@ mod tests {
 	    0
 	}
 
-	fn read(&self, buf: &[u8], _auxdata: &Option<Vec<String>>)
+	fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
 		-> (i32, usize) {
 	    assert_eq!(buf.len(), 7);
 	    let s = unsafe { std::str::from_utf8_unchecked(buf) };
@@ -2100,7 +2125,7 @@ mod tests {
 	    0
 	}
 
-	fn read(&self, _buf: &[u8], _auxdata: &Option<Vec<String>>)
+	fn read(&self, _buf: &[u8], _auxdata: Option<&[&str]>)
 		-> (i32, usize) {
 	    (0, 0)
 	}
@@ -2295,7 +2320,7 @@ mod tests {
             0
         }
 
-        fn read(&self, buf: &[u8], _auxdata: &Option<Vec<String>>)
+        fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
                 -> (i32, usize) {
 	    match self.g.write(buf, None) {
 		Ok(len) => {
@@ -2550,7 +2575,7 @@ mod tests {
 	    panic!("Unexpected err");
 	}
 
-	fn read(&self, buf: &[u8], _auxdata: &Option<Vec<String>>)
+	fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
 		-> (i32, usize) {
 	    (0, buf.len())
 	}
