@@ -19,6 +19,7 @@ pub mod osfuncs;
 pub mod raw;
 pub mod addr;
 pub mod mdns;
+pub mod netifs;
 
 /// gensio error values.  See gensio_err.3
 pub const GE_NOERR:			i32 = 0;
@@ -634,7 +635,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 			let dst = unsafe {
 			    std::slice::from_raw_parts_mut(dst, maxlen)
 			};
-			for i in 0 .. len - 1 {
+			for i in 0 .. len {
 			    dst[i] = src[i];
 			}
 			unsafe { *buflen = len as GensioDS; }
@@ -660,7 +661,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
             }
 	    let dst = dst as *mut u8;
 	    let dst = unsafe {std::slice::from_raw_parts_mut(dst, len) };
-	    for i in 0 .. len - 1 {
+	    for i in 0 .. len {
 		dst[i] = src[i];
 	    }
 	    unsafe {
@@ -679,7 +680,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    let data = unsafe {
 		Vec::from_raw_parts(data, *buflen as usize, *buflen as usize)
 	    };
-	    let str = String::from_utf8(data).unwrap();
+	    let str = String::from_utf8_lossy(&data);
 	    let str: Vec<&str> = str.split(":").collect();
 	    if str.len() >= 2 {
 		let height: u32 = str[0].parse().unwrap();
@@ -1122,7 +1123,7 @@ impl Gensio {
 		       -> Result<String, i32> {
 	let mut valv = to_term_str_bytes(val);
 	match self.control_resize(depth, get, option, &mut valv) {
-	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
+	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
 	    Err(err) => Err(err)
 	}
     }
@@ -1229,7 +1230,7 @@ impl Gensio {
 			  -> Result<String, i32> {
 	let mut valv = to_term_str_bytes(val);
 	match self.acontrol_resize_s(depth, get, option, &mut valv, timeout) {
-	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
+	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
 	    Err(err) => Err(err)
 	}
     }
@@ -1295,7 +1296,7 @@ impl Gensio {
 	let mut valv = to_term_str_bytes(val);
 	match self.acontrol_resize_s_intr(depth, get, option, &mut valv,
 					  timeout) {
-	    Ok(newv) => Ok(String::from_utf8(newv).unwrap()),
+	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
 	    Err(err) => Err(err)
 	}
     }
@@ -1579,7 +1580,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 			let dst = unsafe {
 			    std::slice::from_raw_parts_mut(dst, maxlen)
 			};
-			for i in 0 .. len - 1 {
+			for i in 0 .. len {
 			    dst[i] = src[i];
 			}
 			unsafe { (*vd).password_len = len as GensioDS; }
@@ -1612,7 +1613,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    }
 	    let dst = unsafe { (*vd).password as *mut u8 };
 	    let dst = unsafe {std::slice::from_raw_parts_mut(dst, len) };
-	    for i in 0 .. len - 1 {
+	    for i in 0 .. len {
 		dst[i] = src[i];
 	    }
 	    unsafe {(*vd).password_len = len as GensioDS; }
@@ -1825,7 +1826,7 @@ impl Accepter {
 		       -> Result<String, i32> {
 	let mut valv = val.as_bytes().to_vec();
 	let rv = self.control_resize(depth, get, option, &mut valv)?;
-	Ok(String::from_utf8(rv).unwrap())
+	Ok(String::from_utf8_lossy(&rv).to_string())
     }
 
     /// Will gensios the accepter creates be reliable?
@@ -1997,7 +1998,7 @@ mod tests {
 	fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
 		-> (i32, usize) {
 	    assert_eq!(buf.len(), 7);
-	    let s = unsafe { std::str::from_utf8_unchecked(buf) };
+	    let s = String::from_utf8_lossy(buf);
 	    assert_eq!(s, "teststr");
 	    self.w.wake().expect("Wake open done failed");
 	    (0, buf.len())
@@ -2591,7 +2592,8 @@ mod tests {
 	    match &*v {
 		None => panic!("No value"),
 		Some(s2) => {
-		    let s = String::from_utf8(buf.to_vec()).unwrap();
+		    let v = buf.to_vec();
+		    let s = String::from_utf8_lossy(&v);
 		    assert_eq!(*s2, s);
 		}
 	    };

@@ -1,3 +1,8 @@
+//! # addr
+//!
+//! This holds code for manipulating gensio addresses.
+//!
+
 // Copyright 2023 Corey Minyard
 //
 // SPDX-License-Identifier: Apache-2.0
@@ -9,6 +14,7 @@ use crate::osfuncs;
 
 pub mod raw;
 
+/// Structure representing a gensio address.
 pub struct Addr {
     ai: *const raw::gensio_addr,
 }
@@ -52,7 +58,7 @@ pub fn from_bytes(o: &osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
     Ok(Addr { ai: ai })
 }
 
-// Create an address from an address string.  Doesn't work for AX25.
+/// Create an address from an address string.  Doesn't work for AX25.
 pub fn from_str(o: &osfuncs::OsFuncs, s: &str, protocol: i32, listen: bool)
 		-> Result<Addr, i32> {
     let ai: *const raw::gensio_addr = std::ptr::null();
