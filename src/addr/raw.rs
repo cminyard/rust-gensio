@@ -32,6 +32,9 @@ extern "C" {
     pub fn gensio_addr_get_nettype(ai: *const gensio_addr) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
+    pub fn gensio_addr_get_port(ai: *const gensio_addr) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
     pub fn gensio_addr_next(ai: *const gensio_addr) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
@@ -47,4 +50,12 @@ extern "C" {
 			      buf: *const ffi::c_void, len: GensioDS,
 			      port: ffi::c_uint,
 			      newaddr: *const *const gensio_addr) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_os_scan_netaddr(o: *const osfuncs::raw::gensio_os_funcs,
+				  str: *const ffi::c_char,
+				  listen: ffi::c_int,
+				  protocol: ffi::c_int,
+				  newaddr: *const *const gensio_addr)
+				  -> ffi::c_int;
 }

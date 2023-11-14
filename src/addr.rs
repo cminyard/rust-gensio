@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::ffi;
+use std::ffi::CString;
 use crate::GensioDS;
 use crate::osfuncs;
 
@@ -23,6 +24,8 @@ pub const GENSIO_NETTYPE_IPV6: i32 = 2;
 pub const GENSIO_NETTYPE_UNIX: i32 = 3;
 pub const GENSIO_NETTYPE_AX25: i32 = 4;
 
+// Create a new address from a raw gensio address.  This is mostly for
+// internal use.
 pub fn new(ai: *const raw::gensio_addr) -> Result<Addr, i32> {
     let naddr = unsafe { raw::gensio_addr_dup(ai) };
     if ai == std::ptr::null() {
@@ -31,7 +34,10 @@ pub fn new(ai: *const raw::gensio_addr) -> Result<Addr, i32> {
     Ok(Addr { ai: naddr })
 }
 
-pub fn from_bytes(o: osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
+// Create an address from the nettype, port, and a buffer with the
+// address info, either the ipv4 address, ipv6 address, or the unix
+// path.  Doesn't work for AX25.
+pub fn from_bytes(o: &osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
 		  -> Result<Addr, i32> {
     let ai: *const raw::gensio_addr = std::ptr::null();
     let rv = unsafe {
@@ -46,25 +52,62 @@ pub fn from_bytes(o: osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
     Ok(Addr { ai: ai })
 }
 
+// Create an address from an address string.  Doesn't work for AX25.
+pub fn from_str(o: &osfuncs::OsFuncs, s: &str, protocol: i32, listen: bool)
+		-> Result<Addr, i32> {
+    let ai: *const raw::gensio_addr = std::ptr::null();
+    let cstr = match CString::new(s) {
+	Ok(s) => s,
+	Err(_) => return Err(crate::GE_INVAL)
+    };
+    let listeni = match listen { true => 1, false => 0 };
+    let rv = unsafe {
+	raw::gensio_os_scan_netaddr(o.raw(),
+				    cstr.as_ptr() as *const ffi::c_char,
+				    listeni as ffi::c_int,
+				    protocol as ffi::c_int,
+				    &ai)
+    };
+    if rv != 0 {
+	return Err(rv);
+    }
+    Ok(Addr { ai: ai })
+}
+
 impl Addr {
+    /// Move the current working address to the next address.  Returns
+    /// false if at the last address.
     pub fn next(&self) -> bool {
 	unsafe { raw::gensio_addr_next(self.ai) != 0 }
     }
 
+    /// Move the current working address to the first address.
     pub fn rewind(&self) {
 	unsafe { raw::gensio_addr_rewind(self.ai) };
     }
 
+    /// Get the nettype from the address.
     pub fn nettype(&self) -> i32 {
 	unsafe { raw::gensio_addr_get_nettype(self.ai) as i32 }
     }
 
+    /// Get the port from the address.  Returns -1 if the address doesn't
+    /// use a port.
+    pub fn port(&self) -> i32 {
+	unsafe { raw::gensio_addr_get_port(self.ai) as i32 }
+    }
+
+    /// Compare two addresses for equality.  cmp_port sets whether the
+    /// ports are compared.  If cmp_all is set, all addresses in the
+    /// address are compared.
     pub fn equal(&self, a2: &Addr, cmp_port: bool, cmp_all: bool) -> bool {
 	let p = match cmp_port { true => 1, false => 0 };
 	let a = match cmp_all { true => 1, false => 0 };
 	unsafe { raw::gensio_addr_equal(self.ai, a2.ai, p, a) != 0 }
     }
 
+    /// Get the raw addres data for the address, either the ipv4 address,
+    /// ipv6 address, or the unix path.
     pub fn to_bytes(&self) -> Vec<u8> {
 	let mut buf: Vec<u8> = Vec::new();
 	buf.push(0); // Ensure some data is there.
@@ -84,7 +127,6 @@ impl Addr {
 	unsafe { buf.set_len(len as usize); }
 	buf
     }
-
 }
 
 impl Clone for Addr {
@@ -136,5 +178,35 @@ impl PartialEq for Addr {
 impl Drop for Addr {
     fn drop(&mut self) {
 	unsafe { raw::gensio_addr_free(self.ai); }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    struct LogHandler;
+
+    impl osfuncs::GensioLogHandler for LogHandler {
+	fn log(&self, _logstr: String) {
+	    // What to fill in here?
+	}
+    }
+
+    #[test]
+    fn addr() {
+	let o = osfuncs::new(Arc::new(LogHandler))
+	    .expect("Couldn't allocate os funcs");
+	o.thread_setup().expect("Couldn't setup thread");
+
+	let a1 = from_str(&o, "ipv4,127.0.0.1,3000", GENSIO_NET_PROTOCOL_TCP,
+			  false).expect("Error in address creation");
+	assert_eq!(a1.to_string(), "ipv4,127.0.0.1,3000".to_string());
+	assert_eq!(a1.port(), 3000);
+	assert_eq!(a1.nettype(), GENSIO_NETTYPE_IPV4);
+	let a2 = from_bytes(&o, a1.nettype(), &a1.to_bytes(), a1.port() as u32).
+	    expect("Couldn't create address 2");
+	assert!(a1.eq(&a2));
     }
 }
