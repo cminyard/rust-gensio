@@ -385,6 +385,33 @@ impl OsFuncs {
 	Ok(Runner { r: r, d: d })
     }
 
+    /// Run the service loop once to handle events.
+    pub fn service(&self, timeout: Option<&Duration>)
+		   -> Result<Option<Duration>, i32> {
+	let t: *const raw::gensio_time;
+        let mut to = raw::gensio_time { secs: 0, nsecs: 0 };
+        match timeout {
+            None => t = std::ptr::null(),
+            Some(d) => {
+                to.secs = d.as_secs() as i64;
+		to.nsecs = d.subsec_nanos() as i32;
+                t = &to;
+            }
+        }
+	let err = unsafe { raw::gensio_os_funcs_service(self.o.o, t) };
+	match err {
+	    0 => {
+                if t == std::ptr::null() {
+                    Ok(None)
+                } else {
+                    Ok(Some(unsafe {Duration::new((*t).secs as u64,
+                                                  (*t).nsecs as u32)}))
+                }
+            }
+	    _ => Err(err)
+	}
+    }
+
     /// Get a reference to the os_funcs that we can keep and use.  For
     /// internal use only.
     pub fn raw(&self) -> *const raw::gensio_os_funcs {
