@@ -11,6 +11,7 @@
 
 use std::ffi;
 use std::sync::Arc;
+use std::sync::Weak;
 use std::sync::Mutex;
 use std::time::Duration;
 use std::panic;
@@ -152,7 +153,7 @@ pub trait OpDoneErr {
 }
 
 struct OpDoneErrData {
-    cb: Arc<dyn OpDoneErr>
+    cb: Weak<dyn OpDoneErr>
 }
 
 /// Acontrol callbacks will need to implement this trait.
@@ -167,7 +168,7 @@ pub trait ControlDone {
 }
 
 struct ControlDoneData {
-    cb: Arc<dyn ControlDone>
+    cb: Weak<dyn ControlDone>
 }
 
 fn i_control_done(_io: *const raw::gensio,
@@ -179,12 +180,17 @@ fn i_control_done(_io: *const raw::gensio,
     let d = user_data as *mut ControlDoneData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
     let data = buf as *const u8;
+    let cb = d.cb.upgrade();
+    let cb = match cb {
+	None => return,
+	Some(cb) => cb
+    };
     let data = unsafe {
 	std::slice::from_raw_parts(data, len as usize)
     };
     match err {
-	0 => d.cb.done(data),
-	_ => d.cb.done_err(err)
+	0 => cb.done(data),
+	_ => cb.done_err(err)
     }
 }
 
@@ -202,9 +208,14 @@ fn i_op_done_err(_io: *const raw::gensio, err: ffi::c_int,
 		 user_data: *mut ffi::c_void) {
     let d = user_data as *mut OpDoneErrData;
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
+    let cb = d.cb.upgrade();
+    let cb = match cb {
+	None => return,
+	Some(cb) => cb
+    };
     match err {
-	0 => d.cb.done(),
-	_ => d.cb.done_err(err)
+	0 => cb.done(),
+	_ => cb.done_err(err)
     }
 }
 
@@ -234,7 +245,7 @@ pub fn puts(s: &str) {
 }
 
 struct CloseDoneData {
-    cb: Option<Arc<dyn OpDone>>,
+    cb: Option<Weak<dyn OpDone>>,
     d: *mut GensioData,
 }
 
@@ -243,7 +254,13 @@ fn i_close_done(_io: *const raw::gensio, user_data: *mut ffi::c_void) {
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
     match d.cb {
 	None => (),
-	Some(cb) => cb.done()
+	Some(cb) => {
+	    let cb = cb.upgrade();
+	    match cb {
+		None => (),
+		Some(cb) => cb.done()
+	    };
+	}
     }
     let mut state = unsafe {(*d.d).state.lock().unwrap() };
     match *state {
@@ -394,7 +411,7 @@ enum GensioState {
 
 struct GensioData {
     o: osfuncs::OsFuncs,
-    cb: Arc<dyn Event>,
+    cb: Weak<dyn Event>,
     state: Mutex<GensioState>,
     close_waiter: osfuncs::Waiter,
 }
@@ -495,7 +512,7 @@ impl Event for DummyEvHndl {
 fn new_gensio_data(o: &osfuncs::OsFuncs, cb: Arc<dyn Event>,
 	           state: GensioState) -> Result<GensioData, i32> {
     Ok(GensioData {
-        o: o.clone(), cb: cb.clone(), state: Mutex::new(state),
+        o: o.clone(), cb: Arc::downgrade(&cb), state: Mutex::new(state),
         close_waiter: o.new_waiter()?,
     })
  }
@@ -517,6 +534,11 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    auxdata: *const *const ffi::c_char) -> ffi::c_int
 {
     let g = user_data as *mut GensioData;
+    let cb = unsafe { (*g).cb.upgrade() };
+    let cb = match cb {
+	None => return GE_NOTREADY,
+	Some(cb) => cb
+    };
 
     let mut err = 0;
     match event {
@@ -525,7 +547,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    if s != std::ptr::null_mut() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
-		unsafe { (*g).cb.log(logstr); }
+		cb.log(logstr);
 		unsafe { raw::gensio_free_loginfo_str(s); }
 	    }
 	    err = 0;
@@ -535,14 +557,14 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    if s != std::ptr::null_mut() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
-		unsafe { (*g).cb.parmlog(logstr); }
+		cb.parmlog(logstr);
 		unsafe { raw::gensio_free_loginfo_str(s); }
 	    }
 	    err = 0;
 	}
 	raw::GENSIO_EVENT_READ => {
 	    if ierr != 0 {
-		return unsafe {(*g).cb.err(ierr)};
+		return cb.err(ierr);
 	    }
 
 	    // Convert the buffer into a slice.  You can't use it directly as
@@ -559,17 +581,18 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		Some(t) => Some(t.as_slice())
 	    };
 	    let count;
-	    (err, count) = unsafe { (*g).cb.read(b, a3) };
+	    (err, count) = cb.read(b, a3);
 	    unsafe { *buflen = count as GensioDS; }
 	}
 	raw::GENSIO_EVENT_WRITE_READY => {
-	    err = unsafe { (*g).cb.write_ready() };
+	    err = cb.write_ready();
 	}
 	raw::GENSIO_EVENT_NEW_CHANNEL => {
 	    let g2 = buf as *const raw::gensio;
-	    let cb = Arc::new(DummyEvHndl{ });
+	    let tmpcb = Arc::new(DummyEvHndl{ });
 	    let o = unsafe {(*g).o.clone() };
-	    let new_g = match new_gensio(&o, g2, cb, GensioState::Open, None) {
+	    let new_g = match new_gensio(&o, g2, tmpcb,
+					 GensioState::Open, None) {
 		Ok(g) => g,
 		Err(e) => return e
 	    };
@@ -583,18 +606,16 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		None => None,
 		Some(t) => Some(t.as_slice())
 	    };
-	    err = unsafe {
-		(*g).cb.new_channel(new_g, a3)
-	    };
+	    err = cb.new_channel(new_g, a3);
 	}
 	raw::GENSIO_EVENT_SEND_BREAK => {
-	    err = unsafe { (*g).cb.send_break() };
+	    err = cb.send_break();
 	}
 	raw::GENSIO_EVENT_AUTH_BEGIN => {
-	    err = unsafe { (*g).cb.auth_begin() };
+	    err = cb.auth_begin();
 	}
 	raw::GENSIO_EVENT_PRECERT_VERIFY => {
-	    err = unsafe { (*g).cb.precert_verify() };
+	    err = cb.precert_verify();
 	}
 	raw::GENSIO_EVENT_POSTCERT_VERIFY => {
 	    let errstr = {
@@ -607,17 +628,17 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		    Some(cs.to_str().expect("Invalid string").to_string())
 		}
 	    };
-	    err = unsafe { (*g).cb.postcert_verify(ierr, &errstr) };
+	    err = cb.postcert_verify(ierr, &errstr);
 	}
 	raw::GENSIO_EVENT_PASSWORD_VERIFY => {
 	    let cs = unsafe { ffi::CStr::from_ptr(buf as *const ffi::c_char) };
 	    let s = cs.to_str().expect("Invalid string").to_string();
-	    err = unsafe { (*g).cb.password_verify(&s) };
+	    err = cb.password_verify(&s);
 	}
 	raw::GENSIO_EVENT_REQUEST_PASSWORD => {
 	    let s;
 	    let maxlen = unsafe {*buflen as usize };
-	    (err, s) = unsafe { (*g).cb.request_password(maxlen) };
+	    (err, s) = cb.request_password(maxlen);
 	    if err == 0 {
 		match s {
 		    None => return GE_INVAL,
@@ -645,7 +666,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	}
 	raw::GENSIO_EVENT_REQUEST_2FA => {
 	    let src;
-	    (err, src) = unsafe { (*g).cb.request_2fa() };
+	    (err, src) = cb.request_2fa();
 	    if err != 0 {
 		return err;
 	    }
@@ -673,7 +694,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    let data = unsafe {
 		std::slice::from_raw_parts(data, *buflen as usize)
 	    };
-	    err = unsafe { (*g).cb.verify_2fa(data) };
+	    err = cb.verify_2fa(data);
 	}
 	raw::GENSIO_EVENT_WIN_SIZE => {
 	    let data = buf as *mut u8;
@@ -685,94 +706,94 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    if str.len() >= 2 {
 		let height: u32 = str[0].parse().unwrap();
 		let width: u32 = str[1].parse().unwrap();
-		unsafe { (*g).cb.win_size(height, width); }
+		cb.win_size(height, width);
 	    }
 	}
 	raw::GENSIO_EVENT_SER_MODEMSTATE => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.modemstate(data); }
+	    cb.modemstate(data);
 	}
 	raw::GENSIO_EVENT_SER_LINESTATE => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.linestate(data); }
+	    cb.linestate(data);
 	}
 	raw::GENSIO_EVENT_SER_MODEMSTATE_MASK => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.modemstate_mask(data); }
+	    cb.modemstate_mask(data);
 	}
 	raw::GENSIO_EVENT_SER_LINESTATE_MASK => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.linestate_mask(data); }
+	    cb.linestate_mask(data);
 	}
 	raw::GENSIO_EVENT_SER_SIGNATURE => {
 	    let data = buf as *const u8;
 	    let data = unsafe {
 		std::slice::from_raw_parts(data, *buflen as usize)
 	    };
-	    unsafe { (*g).cb.signature(data); }
+	    cb.signature(data);
 	}
 	raw::GENSIO_EVENT_SER_FLOW_STATE => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
 	    let data = data == 1;
-	    unsafe { (*g).cb.flow_state(data); }
+	    cb.flow_state(data);
 	}
 	raw::GENSIO_EVENT_SER_FLUSH => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.flush(data); }
+	    cb.flush(data);
 	}
 	raw::GENSIO_EVENT_SER_SYNC => {
-	    unsafe { (*g).cb.sync(); }
+	    cb.sync();
 	}
 	raw::GENSIO_EVENT_SER_BAUD => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.baud(data); }
+	    cb.baud(data);
 	}
 	raw::GENSIO_EVENT_SER_DATASIZE => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.datasize(data); }
+	    cb.datasize(data);
 	}
 	raw::GENSIO_EVENT_SER_PARITY => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.parity(data); }
+	    cb.parity(data);
 	}
 	raw::GENSIO_EVENT_SER_STOPBITS => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.stopbits(data); }
+	    cb.stopbits(data);
 	}
 	raw::GENSIO_EVENT_SER_FLOWCONTROL => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.flowcontrol(data); }
+	    cb.flowcontrol(data);
 	}
 	raw::GENSIO_EVENT_SER_IFLOWCONTROL => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.iflowcontrol(data); }
+	    cb.iflowcontrol(data);
 	}
 	raw::GENSIO_EVENT_SER_SBREAK => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.sbreak(data); }
+	    cb.sbreak(data);
 	}
 	raw::GENSIO_EVENT_SER_DTR => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.dtr(data); }
+	    cb.dtr(data);
 	}
 	raw::GENSIO_EVENT_SER_RTS => {
 	    let data = buf as *const ffi::c_uint;
 	    let data = unsafe { *data } as u32;
-	    unsafe { (*g).cb.rts(data); }
+	    cb.rts(data);
 	}
 	_ => err = GE_NOTSUP
     }
@@ -857,7 +878,7 @@ impl Gensio {
     ///
     /// Note that the gensio is not open until the callback is called.
     pub fn open(&self, cb: Arc<dyn OpDoneErr>) -> Result<(), i32> {
-	let d = Box::new(OpDoneErrData { cb : cb });
+	let d = Box::new(OpDoneErrData { cb : Arc::downgrade(&cb) });
 	let d = Box::into_raw(d);
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
 	let err = unsafe {
@@ -877,7 +898,7 @@ impl Gensio {
 
     /// Set a new event handler for the gensio.
     pub fn set_handler(&self, cb: Arc<dyn Event>) {
-	unsafe { (*self.d).cb = cb; }
+	unsafe { (*self.d).cb = Arc::downgrade(&cb); }
     }
 
     // Open the gensio synchronously.  Wait until the open completes
@@ -900,6 +921,10 @@ impl Gensio {
     ///
     /// Note that the gensio is not closed until the callback is called.
     pub fn close(&self, cb: Option<Arc<dyn OpDone>>) -> Result<(), i32> {
+	let cb = match cb {
+	    None => None,
+	    Some(cb) => Some(Arc::downgrade(&cb))
+	};
 	let d = Box::new(CloseDoneData { cb : cb, d: self.d });
 	let d = Box::into_raw(d);
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
@@ -1134,7 +1159,8 @@ impl Gensio {
 		    timeout: Option<&Duration>)
 		    -> Result<(), i32> {
 	let d = match done {
-	    Some(v) => Box::into_raw(Box::new(ControlDoneData { cb : v })),
+	    Some(v) => Box::into_raw(Box::new(ControlDoneData {
+		cb : Arc::downgrade(&v) })),
 	    None => std::ptr::null_mut()
 	};
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
@@ -1474,7 +1500,7 @@ pub const GENSIO_ACC_CONTROL_TCPDNAME: u32 = 3;
 
 struct AccepterData {
     o: osfuncs::OsFuncs, // Used to keep the os funcs alive.
-    cb: Arc<dyn AccepterEvent>,
+    cb: Weak<dyn AccepterEvent>,
     state: Mutex<GensioState>,
     close_waiter: osfuncs::Waiter,
 }
@@ -1494,6 +1520,11 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 		data: *const ffi::c_void)
 		-> ffi::c_int {
     let a = user_data as *mut AccepterData;
+    let cb = unsafe { (*a).cb.upgrade() };
+    let cb = match cb {
+	None => return GE_NOTREADY,
+	Some(cb) => cb
+    };
 
     let err: i32;
     match event {
@@ -1502,7 +1533,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    if s != std::ptr::null_mut() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
-		unsafe { (*a).cb.log(logstr); }
+		cb.log(logstr);
 		unsafe { raw::gensio_free_loginfo_str(s); }
 	    }
 	    err = 0;
@@ -1512,16 +1543,16 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    if s != std::ptr::null_mut() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
-		unsafe { (*a).cb.parmlog(logstr); }
+		cb.parmlog(logstr);
 		unsafe { raw::gensio_free_loginfo_str(s); }
 	    }
 	    err = 0;
 	}
 	raw::GENSIO_ACC_EVENT_NEW_CONNECTION => {
 	    let g = data as *const raw::gensio;
-	    let cb = Arc::new(DummyEvHndl{ });
+	    let tmpcb = Arc::new(DummyEvHndl{ });
 	    let o = unsafe { (*a).o.clone() };
-	    let new_g = match new_gensio(&o, g, cb.clone(), GensioState::Open,
+	    let new_g = match new_gensio(&o, g, tmpcb, GensioState::Open,
 					 None) {
 		Ok(g) => g,
 		Err(e) => return e
@@ -1530,15 +1561,13 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 		raw::gensio_set_callback(new_g.g, evhndl,
                                          new_g.d as *mut ffi::c_void);
 	    }
-	    err = unsafe {
-		(*a).cb.new_connection(new_g)
-	    };
+	    err = cb.new_connection(new_g);
 	}
 	raw::GENSIO_ACC_EVENT_AUTH_BEGIN => {
-	    err = unsafe { (*a).cb.auth_begin() };
+	    err = cb.auth_begin();
 	}
 	raw::GENSIO_ACC_EVENT_PRECERT_VERIFY => {
-	    err = unsafe { (*a).cb.precert_verify() };
+	    err = cb.precert_verify();
 	}
 	raw::GENSIO_ACC_EVENT_POSTCERT_VERIFY => {
 	    let vd = data as *const raw::gensio_acc_postcert_verify_data;
@@ -1550,19 +1579,19 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 		    Some(cs.to_str().expect("Invalid string").to_string())
 		}
 	    };
-	    err = unsafe { (*a).cb.postcert_verify((*vd).err, &errstr) };
+	    err = cb.postcert_verify(unsafe { (*vd).err }, &errstr);
 	}
 	raw::GENSIO_ACC_EVENT_PASSWORD_VERIFY => {
 	    let vd = data as *const raw::gensio_acc_password_verify_data;
 	    let cs = unsafe { ffi::CStr::from_ptr((*vd).password) };
 	    let s = cs.to_str().expect("Invalid string").to_string();
-	    err = unsafe { (*a).cb.password_verify(&s) };
+	    err = cb.password_verify(&s);
 	}
 	raw::GENSIO_ACC_EVENT_REQUEST_PASSWORD => {
 	    let vd = data as *mut raw::gensio_acc_password_verify_data;
 	    let s;
 	    let maxlen = unsafe { (*vd).password_len } as usize;
-	    (err, s) = unsafe { (*a).cb.request_password(maxlen as u64) };
+	    (err, s) = cb.request_password(maxlen as u64);
 	    if err == 0 {
 		match s {
 		    None => return GE_INVAL,
@@ -1594,12 +1623,12 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    let data = unsafe {
 		std::slice::from_raw_parts(data, (*vd).password_len as usize)
 	    };
-	    err = unsafe { (*a).cb.verify_2fa(data) };
+	    err = cb.verify_2fa(data);
 	}
 	raw::GENSIO_ACC_EVENT_REQUEST_2FA => {
 	    let vd = data as *mut raw::gensio_acc_password_verify_data;
 	    let src;
-	    (err, src) = unsafe { (*a).cb.request_2fa() };
+	    (err, src) = cb.request_2fa();
 	    if err != 0 {
 		return err;
 	    }
@@ -1651,7 +1680,7 @@ pub fn new_accepter(s: &str, o: &osfuncs::OsFuncs,
     };
     // Create the callback data.
     let dt = Box::new(AccepterData { o: o.clone(),
-				     cb: cb.clone(),
+				     cb: Arc::downgrade(&cb),
 				     state: Mutex::new(GensioState::Closed),
 				     close_waiter: o.new_waiter()?, });
     let dt = Box::into_raw(dt);
@@ -1678,7 +1707,7 @@ pub trait AccepterShutdownDone {
 }
 
 struct AccepterShutdownDoneData {
-    cb: Option<Arc<dyn AccepterShutdownDone>>,
+    cb: Option<Weak<dyn AccepterShutdownDone>>,
     d: *mut AccepterData,
 }
 
@@ -1688,7 +1717,13 @@ fn i_acc_shutdown_done(_io: *const raw::gensio_accepter,
     let d = unsafe { Box::from_raw(d) }; // Use from_raw so it will be freed
     match d.cb {
 	None => (),
-	Some(cb) => cb.done()
+	Some(cb) => {
+	    let cb = cb.upgrade();
+	    match cb {
+		None => (),
+		Some(cb) => cb.done()
+	    }
+	}
     }
     let mut state = unsafe {(*d.d).state.lock().unwrap() };
     match *state {
@@ -1712,7 +1747,7 @@ extern "C" fn acc_shutdown_done(io: *const raw::gensio_accepter,
 impl Accepter {
     /// Set a new event handler for the accepter.
     pub fn set_handler(&self, cb: Arc<dyn AccepterEvent>) {
-	unsafe { (*self.d).cb = cb; }
+	unsafe { (*self.d).cb = Arc::downgrade(&cb); }
     }
 
     /// Start the accepter running.
@@ -1735,6 +1770,10 @@ impl Accepter {
     /// callback if you don't care.
     pub fn shutdown(&self, cb: Option<Arc<dyn AccepterShutdownDone>>)
 		    -> Result<(), i32> {
+	let cb = match cb {
+	    None => None,
+	    Some(cb) => Some(Arc::downgrade(&cb))
+	};
 	let d = Box::new(
 	    AccepterShutdownDoneData { cb : cb, d: self.d });
 	let d = Box::into_raw(d);

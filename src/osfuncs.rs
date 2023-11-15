@@ -59,7 +59,9 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
     }
     match err {
 	0 => {
-	    let d = Box::new(GensioLogHandlerData { cb: log_func });
+	    let d = Box::new(GensioLogHandlerData {
+		cb: Arc::downgrade(&log_func)
+	    });
 	    let d = Box::into_raw(d);
 	    unsafe {
 		raw::gensio_rust_set_log(o, log_handler,
@@ -89,16 +91,21 @@ pub trait GensioLogHandler {
 }
 
 struct GensioLogHandlerData {
-    cb: Arc<dyn GensioLogHandler>
+    cb: Weak<dyn GensioLogHandler>
 }
 
 fn i_log_handler(log: *const ffi::c_char,
 		 data: *mut ffi::c_void) {
     let d = data as *mut GensioLogHandlerData;
+    let cb = unsafe { (*d).cb.upgrade() };
+    let cb = match cb {
+	None => return,
+	Some(cb) => cb
+    };
     let s = unsafe { ffi::CStr::from_ptr(log) };
     let s = s.to_str().expect("Invalid log string").to_string();
 
-    unsafe { (*d).cb.log(s); }
+    cb.log(s)
 }
 
 extern "C" fn log_handler(log: *const ffi::c_char,
@@ -349,7 +356,8 @@ impl OsFuncs {
 	    w = raw::gensio_os_funcs_alloc_waiter(self.o.o);
 	}
 	let d = Box::new(TimerData { o: self.o.clone(),
-				     handler: handler, freed: false,
+				     handler: Arc::downgrade(&handler),
+				     freed: false,
 				     stopping: false,
 				     w: w, m: Mutex::new(0) });
 	let d = Box::into_raw(d);
@@ -370,7 +378,7 @@ impl OsFuncs {
     pub fn new_runner(&self, handler: Arc<dyn RunnerHandler>)
 		     -> Result<Runner, i32> {
 	let d = Box::new(RunnerData { o: self.o.clone(),
-				      handler: handler });
+				      handler: Arc::downgrade(&handler) });
 	let d = Box::into_raw(d);
 	let r;
 	unsafe {
@@ -532,7 +540,7 @@ pub trait TimerStopDoneHandler {
 
 struct TimerData {
     o: Arc<IOsFuncs>,
-    handler: Arc<dyn TimeoutHandler>,
+    handler: Weak<dyn TimeoutHandler>,
     stopping: bool,
     freed: bool,
     w: *const raw::gensio_waiter, // Waits for the timer to stop
@@ -556,7 +564,12 @@ pub struct Timer {
 fn i_timeout_handler(_t: *const raw::gensio_timer,
 		     cb_data: *mut ffi::c_void) {
     let d = cb_data as *mut TimerData;
-    unsafe { (*d).handler.timeout() };
+    let cb = unsafe { (*d).handler.upgrade() };
+    let cb = match cb {
+	None => return,
+	Some(cb) => cb
+    };
+    cb.timeout();
 }
 
 extern "C" fn timeout_handler(t: *const raw::gensio_timer,
@@ -567,7 +580,7 @@ extern "C" fn timeout_handler(t: *const raw::gensio_timer,
 }
 
 struct TimerStopData {
-    cb: Arc<dyn TimerStopDoneHandler>,
+    cb: Weak<dyn TimerStopDoneHandler>,
     d: *mut TimerData
 }
 
@@ -581,7 +594,11 @@ fn i_timer_stopped_handler(_t: *const raw::gensio_timer,
 	    (*d2).stopping = false;
 	}
 
-	(*d).cb.timer_stopped();
+	let cb = (*d).cb.upgrade();
+	match cb {
+	    None => (),
+	    Some(cb) => cb.timer_stopped()
+	};
 
 	let _guard = (*d2).m.lock().unwrap();
 	if (*d2).freed {
@@ -654,7 +671,8 @@ impl Timer {
 	    if (*self.d).stopping {
 		return Err(crate::GE_INUSE)
 	    }
-	    let d = Box::new(TimerStopData { cb : cb, d: self.d });
+	    let d = Box::new(TimerStopData { cb : Arc::downgrade(&cb),
+					     d: self.d });
 	    let d = Box::into_raw(d);
 	    let err = raw::gensio_os_funcs_stop_timer_with_done(
 		(*self.d).o.o, self.t,
@@ -734,7 +752,7 @@ pub trait RunnerHandler {
 
 struct RunnerData {
     o: Arc<IOsFuncs>,
-    handler: Arc<dyn RunnerHandler>,
+    handler: Weak<dyn RunnerHandler>,
 }
 
 /// A type for running callbacks in base context.
@@ -746,7 +764,11 @@ pub struct Runner {
 fn i_runner_handler(_r: *const raw::gensio_runner,
 		    cb_data: *mut ffi::c_void) {
     let d = cb_data as *mut RunnerData;
-    unsafe { (*d).handler.runner() };
+    let cb = unsafe { (*d).handler.upgrade() };
+    match cb {
+	None => (),
+	Some(cb) => cb.runner()
+    };
 }
 
 extern "C" fn runner_handler(r: *const raw::gensio_runner,

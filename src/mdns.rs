@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::sync::Arc;
+use std::sync::Weak;
 use std::sync::Mutex;
 use std::ffi;
 use std::ffi::CString;
@@ -27,7 +28,7 @@ pub fn new(o: &osfuncs::OsFuncs) -> Result<MDNS, i32> {
 }
 
 struct MDNSDoneData {
-    cb: Arc<dyn MDNSDone>,
+    cb: Weak<dyn MDNSDone>,
 }
 
 pub trait MDNSDone {
@@ -36,7 +37,11 @@ pub trait MDNSDone {
 
 fn i_mdns_done(_m: *const raw::gensio_mdns, cb_data: *mut ffi::c_void) {
     let d = unsafe { Box::from_raw(cb_data as *mut MDNSDoneData) };
-    d.cb.done();
+    let cb = match d.cb.upgrade() {
+	None => return,
+	Some(cb) => cb
+    };
+    cb.done();
 }
 
 extern "C" fn mdns_done(m: *const raw::gensio_mdns,
@@ -67,7 +72,7 @@ impl MDNS {
 	}
 	*closed = true;
 
-	let d = Box::new(MDNSDoneData { cb: done.clone() });
+	let d = Box::new(MDNSDoneData { cb: Arc::downgrade(&done) });
 	let d = Box::into_raw(d);
 	let err = unsafe { raw::gensio_free_mdns(self.m, mdns_done,
 						 d as *mut ffi::c_void) };
@@ -89,7 +94,8 @@ impl MDNS {
 	    return Err(crate::GE_NOTREADY);
 	}
 
-	let sd = Box::new(ServiceData { _o: self.o.clone(), cb: done });
+	let sd = Box::new(ServiceData { _o: self.o.clone(),
+					 cb: Arc::downgrade(&done) });
 	let sd = Box::into_raw(sd);
 	let s: *const raw::gensio_mdns_service = std::ptr::null();
 	let (namep, _nameh) = optstr_to_cstr(name)?;
@@ -132,7 +138,7 @@ impl MDNS {
 
 	let wd = Box::new(WatchData {
 	    _o: self.o.clone(),
-	    cb: cb,
+	    cb: Arc::downgrade(&cb),
 	    state: Mutex::new(CloseState::Open),
 	    close_waiter: self.o.new_waiter()?,
 	});
@@ -186,7 +192,7 @@ pub trait ServiceEvent {
 
 struct ServiceData {
     _o: osfuncs::OsFuncs, // Keep osfuncs around
-    cb: Arc<dyn ServiceEvent>,
+    cb: Weak<dyn ServiceEvent>,
 }
 
 pub struct Service {
@@ -201,7 +207,10 @@ fn i_service_event(_s: *const raw::gensio_mdns_service,
     let d = cb_data as *mut ServiceData;
     let infosstr = cstrptr_to_optstring(info);
     let infos = optstring_to_optstr(&infosstr);
-    unsafe { (*d).cb.event(event as i32, infos); }
+    match unsafe { (*d).cb.upgrade() } {
+	None => (),
+	Some(cb) => cb.event(event as i32, infos)
+    }
     if event == GENSIO_MDNS_SERVICE_REMOVED {
 	unsafe { drop(Box::from_raw(d)) };
     }
@@ -233,7 +242,7 @@ impl Drop for Service {
 }
 
 struct WatchDoneData {
-    cb: Option<Arc<dyn WatchDone>>,
+    cb: Option<Weak<dyn WatchDone>>,
     d: *mut WatchData,
 }
 
@@ -244,7 +253,10 @@ pub trait WatchDone {
 fn i_watch_done(_w: *const raw::gensio_mdns_watch,
 		cb_data: *mut ffi::c_void) {
     let d = unsafe { Box::from_raw(cb_data as *mut WatchDoneData) };
-    let cb = (*d).cb.clone();
+    let cb = match d.cb {
+	None => None,
+	Some(cb) => cb.upgrade()
+    };
     {
 	let mut state = unsafe { (*d.d).state.lock().unwrap() };
 	match *state {
@@ -295,7 +307,7 @@ enum CloseState {
 
 struct WatchData {
     _o: osfuncs::OsFuncs, // Keep osfuncs around
-    cb: Arc<dyn WatchEvent>,
+    cb: Weak<dyn WatchEvent>,
     state: Mutex<CloseState>,
     close_waiter: osfuncs::Waiter,
 }
@@ -317,6 +329,12 @@ fn i_watch_event(_w: *const raw::gensio_mdns_watch,
 		 txt: *const *const ffi::c_char,
 		 cb_data: *mut ffi::c_void) {
     let d = cb_data as *mut WatchData;
+    let cb = unsafe { (*d).cb.upgrade() };
+    let cb = match cb {
+	None => return,
+	Some(cb) => cb
+    };
+
     let namesstr = cstrptr_to_optstring(name);
     let names = optstring_to_optstr(&namesstr);
     let typesstr = cstrptr_to_optstring(mtype);
@@ -340,11 +358,9 @@ fn i_watch_event(_w: *const raw::gensio_mdns_watch,
 	None => None,
 	Some(t) => Some(t.as_slice())
     };
-    unsafe {
-	(*d).cb.watch(state as i32, iface as i32, ipdomain as i32,
-		      names, types, domains, hosts,
-		      addro, txt3);
-    }
+    cb.watch(state as i32, iface as i32, ipdomain as i32,
+	     names, types, domains, hosts,
+	     addro, txt3);
 }
 
 extern "C" fn watch_event(w: *const raw::gensio_mdns_watch,
@@ -368,7 +384,11 @@ extern "C" fn watch_event(w: *const raw::gensio_mdns_watch,
 impl Watch {
     fn i_shutdown(&self, done: Option<Arc<dyn WatchDone>>)
 		  -> Result<(), i32> {
-	let d = Box::new(WatchDoneData { cb: done.clone(), d: self.d });
+	let cb = match done {
+	    None => None,
+	    Some(cb) => Some(Arc::downgrade(&cb))
+	};
+	let d = Box::new(WatchDoneData { cb: cb, d: self.d });
 	let d = Box::into_raw(d);
 	let err = unsafe { raw::gensio_mdns_remove_watch(
 	    self.w, watch_done, d as *mut ffi::c_void) };
