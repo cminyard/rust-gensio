@@ -797,7 +797,7 @@ extern "C" fn evhndl(io: *const raw::gensio, user_data: *const ffi::c_void,
 /// Arc holding the reference to the event handler.  This function
 /// clones it so it can make sure the data stays around until the
 /// gensio is closed.  See str_to_gensio() for details.
-pub fn new(s: String, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
+pub fn new(s: &str, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
 	   -> Result<Gensio, i32>
 {
     let g: *const raw::gensio = std::ptr::null();
@@ -1641,7 +1641,7 @@ extern "C" fn acc_evhndl(acc: *const raw::gensio_accepter,
 /// reference to the event handler.  This function clones it so it can
 /// make sure the data stays around until the gensio is closed.  See
 /// str_to_gensio_accepter.3
-pub fn new_accepter(s: String, o: &osfuncs::OsFuncs,
+pub fn new_accepter(s: &str, o: &osfuncs::OsFuncs,
 		    cb: Arc<dyn AccepterEvent>)
 		    -> Result<Accepter, i32> {
     let a: *const raw::gensio_accepter = std::ptr::null();
@@ -1968,6 +1968,12 @@ pub fn str_to_onoff(sval: &str) -> Result<u32, i32> {
     }
 }
 
+pub fn err_to_str(err: i32) -> String {
+    let cs = unsafe { raw::gensio_err_to_str(err as ffi::c_int) };
+    let cs = unsafe { ffi::CStr::from_ptr(cs).to_bytes() };
+    String::from_utf8_lossy(cs).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -2038,8 +2044,7 @@ mod tests {
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let e = Arc::new(EvStruct { w: w });
-	let g = new("echo".to_string(), &o, e.clone())
-	    .expect("Couldn't alloc gensio");
+	let g = new("echo", &o, e.clone()).expect("Couldn't alloc gensio");
 	g.open(e.clone()).expect("Couldn't open genio");
 	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	g.read_enable(true);
@@ -2149,7 +2154,7 @@ mod tests {
 		"accepter base: Unknown gensio type: asdf,127.0.0.1:1234"
 		    .to_string());
 	}
-	let a = new_accepter("asdf,127.0.0.1:1234".to_string(), &o, e.clone());
+	let a = new_accepter("asdf,127.0.0.1:1234", &o, e.clone());
 	match a {
 	    Ok(_a) => assert!(false),
 	    Err(e) => assert_eq!(e, GE_UNKNOWN_NAME_ERROR)
@@ -2166,7 +2171,7 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e1 = Arc::new(AccEvent { w: w, d: d });
-	let a = new_accepter("tcp,127.0.0.1,0".to_string(), &o, e1.clone())
+	let a = new_accepter("tcp,127.0.0.1,0", &o, e1.clone())
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
 	let port = match a.control_str(0, GENSIO_CONTROL_GET,
@@ -2178,8 +2183,7 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
-	let g = new(format!("tcp,127.0.0.1,{port}").to_string(),
-		    &o, e2.clone())
+	let g = new(&format!("tcp,127.0.0.1,{port}"), &o, e2.clone())
 	    .expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
@@ -2197,7 +2201,7 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e1 = Arc::new(AccEvent { w: w, d: d });
-	let a = new_accepter("tcp,127.0.0.1,0".to_string(), &o, e1.clone())
+	let a = new_accepter("tcp,127.0.0.1,0", &o, e1.clone())
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
 	let port = match a.control_str(0, GENSIO_CONTROL_GET,
@@ -2209,8 +2213,7 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
-	let g = new(format!("tcp,127.0.0.1,{port}").to_string(),
-		    &o, e2.clone()).
+	let g = new(&format!("tcp,127.0.0.1,{port}"), &o, e2.clone()).
 	    expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
@@ -2549,7 +2552,7 @@ mod tests {
 
     fn new_telnet_reflector(o: &osfuncs::OsFuncs)
 			    -> Result<Arc<TelnetReflector>, i32> {
-        let a = new_accepter("telnet(rfc2217),tcp,localhost,0".to_string(),
+        let a = new_accepter("telnet(rfc2217),tcp,localhost,0",
                              o, Arc::new(InitialTelnetReflectorEv{}))?;
         a.startup()?;
 	let port = a.control_str(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_GET,
@@ -2637,8 +2640,8 @@ mod tests {
 	    w,
 	    expect_val: Mutex::new(None),
 	});
-	let fs = format!("telnet(rfc2217),tcp,localhost,{}", r.port).to_string();
-	let g = new(fs, &o, e.clone()).expect("Gensio allocation failed");
+	let fs = format!("telnet(rfc2217),tcp,localhost,{}", r.port);
+	let g = new(&fs, &o, e.clone()).expect("Gensio allocation failed");
 	g.open_s().expect("Open failed");
 	g.read_enable(true);
 
