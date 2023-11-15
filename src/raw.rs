@@ -326,6 +326,9 @@ extern "C" {
     pub fn gensio_onoff_to_str(val: ffi::c_uint) -> *const ffi::c_char;
     #[allow(improper_ctypes)]
     pub fn gensio_str_to_onoff(sval: *const ffi::c_char) -> ffi::c_int;
+
+    #[allow(improper_ctypes)]
+    pub fn gensio_err_to_str(err: ffi::c_int) -> *const ffi::c_char;
 }
 
 #[cfg(test)]
