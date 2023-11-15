@@ -100,21 +100,26 @@ fn main() {
     let mut telnetstr = String::from("telnet,");
     telnetstr.push_str(&args[1]);
 
-    let o = osfuncs::new(Arc::new(LogHandler))
+    let logh = Arc::new(LogHandler);
+    let loghw = Arc::downgrade(&logh);
+    let o = osfuncs::new(loghw)
 	.expect("Couldn't allocate os funcs");
     o.proc_setup().expect("Couldn't setup thread");
 
     let start_e = Arc::new(StartupEvent{});
-    let io1 = Arc::new(gensio::new("stdio(self)", &o, start_e.clone())
+    let start_ew = Arc::downgrade(&start_e);
+    let io1 = Arc::new(gensio::new("stdio(self)", &o, start_ew.clone())
 		       .expect("Unable to allocate stdio gensio"));
-    let io2 = Arc::new(gensio::new(&telnetstr, &o, start_e.clone())
+    let io2 = Arc::new(gensio::new(&telnetstr, &o, start_ew)
 		       .expect("Unable to allocate telnet gensio"));
     let w = Arc::new(o.new_waiter().expect("Unable to allocate waiter 1"));
     let ev1 = Arc::new(ClientEvent { w: w.clone(), io: io1.clone(),
 				     otherio: io2.clone() });
     let ev2 = Arc::new(ClientEvent { w: w.clone(), io: io2, otherio: io1 });
-    ev1.io.set_handler(ev1.clone());
-    ev2.io.set_handler(ev2.clone());
+    let ev1w = Arc::downgrade(&ev1);
+    ev1.io.set_handler(ev1w);
+    let ev2w = Arc::downgrade(&ev2);
+    ev2.io.set_handler(ev2w);
 
     ev1.io.open_s().expect("Open of stdio failed");
     ev2.io.open_s().expect("Open of telnet failed");

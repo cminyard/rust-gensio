@@ -202,7 +202,9 @@ mod tests {
 
     #[test]
     fn addr() {
-	let o = osfuncs::new(Arc::new(LogHandler))
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = osfuncs::new(loghw)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 

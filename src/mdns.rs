@@ -2,7 +2,6 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
 use std::sync::Weak;
 use std::sync::Mutex;
 use std::ffi;
@@ -68,14 +67,14 @@ fn optstr_to_cstr(s: Option<&str>)
 }
 
 impl MDNS {
-    pub fn shutdown(&self, done: Arc<dyn MDNSDone>) -> Result<(), i32> {
+    pub fn shutdown(&self, cb: Weak<dyn MDNSDone>) -> Result<(), i32> {
 	let mut closed = self.closed.lock().unwrap();
 	if *closed {
 	    return Err(crate::GE_NOTREADY);
 	}
 	*closed = true;
 
-	let d = Box::new(MDNSDoneData { cb: Arc::downgrade(&done) });
+	let d = Box::new(MDNSDoneData { cb });
 	let d = Box::into_raw(d);
 	let err = unsafe { raw::gensio_free_mdns(self.m, mdns_done,
 						 d as *mut ffi::c_void) };
@@ -90,15 +89,14 @@ impl MDNS {
 		       name: Option<&str>, mtype: Option<&str>,
 		       domain: Option<&str>, host: Option<&str>,
 		       port: i32, txt: Option<&[&str]>,
-		       done: Arc<dyn ServiceEvent>)
+		       cb: Weak<dyn ServiceEvent>)
 		       -> Result<Service, i32> {
 	let closed = self.closed.lock().unwrap();
 	if *closed {
 	    return Err(crate::GE_NOTREADY);
 	}
 
-	let sd = Box::new(ServiceData { _o: self.o.clone(),
-					 cb: Arc::downgrade(&done) });
+	let sd = Box::new(ServiceData { _o: self.o.clone(), cb });
 	let sd = Box::into_raw(sd);
 	let s: *const raw::gensio_mdns_service = std::ptr::null();
 	let (namep, _nameh) = optstr_to_cstr(name)?;
@@ -133,7 +131,7 @@ impl MDNS {
     pub fn new_watch(&self, iface: i32, ipdomain: i32,
 		     name: Option<&str>, mtype: Option<&str>,
 		     domain: Option<&str>, host: Option<&str>,
-		     cb: Arc<dyn WatchEvent>) -> Result<Watch, i32> {
+		     cb: Weak<dyn WatchEvent>) -> Result<Watch, i32> {
 	let closed = self.closed.lock().unwrap();
 	if *closed {
 	    return Err(crate::GE_NOTREADY);
@@ -141,7 +139,7 @@ impl MDNS {
 
 	let wd = Box::new(WatchData {
 	    _o: self.o.clone(),
-	    cb: Arc::downgrade(&cb),
+	    cb,
 	    state: Mutex::new(CloseState::Open),
 	    close_waiter: self.o.new_waiter()?,
 	});
@@ -394,12 +392,8 @@ extern "C" fn watch_event(w: *const raw::gensio_mdns_watch,
 }
 
 impl Watch {
-    fn i_shutdown(&self, done: Option<Arc<dyn WatchDone>>)
+    fn i_shutdown(&self, cb: Option<Weak<dyn WatchDone>>)
 		  -> Result<(), i32> {
-	let cb = match done {
-	    None => None,
-	    Some(cb) => Some(Arc::downgrade(&cb))
-	};
 	let d = Box::new(WatchDoneData { cb: cb, d: self.d });
 	let d = Box::into_raw(d);
 	let err = unsafe { raw::gensio_mdns_remove_watch(
@@ -411,7 +405,7 @@ impl Watch {
 	Ok(())
     }
 
-    pub fn shutdown(&self, done: Option<Arc<dyn WatchDone>>)
+    pub fn shutdown(&self, done: Option<Weak<dyn WatchDone>>)
 		    -> Result<(), i32> {
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
 	match *state {
@@ -462,6 +456,7 @@ impl Drop for Watch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use std::time::Duration;
     use serial_test::serial;
 
@@ -559,7 +554,9 @@ mod tests {
     #[test]
     #[serial] // FIXME - figure out why these crash when not serial.
     fn mdns1() {
-	let o = osfuncs::new(Arc::new(LogHandler))
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = osfuncs::new(loghw)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
@@ -573,15 +570,17 @@ mod tests {
 		txt: vec!["A=1".to_string(), "B=2".to_string()],
 	    }),
 	});
+	let wew = Arc::downgrade(&we);
 	let w = m.new_watch(-1, addr::GENSIO_NETTYPE_UNSPEC, None,
 			    Some("=_gensio_rusttest._tcp"), None, None,
-			    we.clone()).expect("Unable to allocate watch");
+			    wew).expect("Unable to allocate watch");
 	let se = Arc::new(IServiceEvent {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
+	let sew = Arc::downgrade(&se);
 	let s = m.new_service(-1, addr::GENSIO_NETTYPE_UNSPEC, Some("gensio1"),
 			      Some("_gensio_rusttest._tcp"), None, None,
-			      5001, Some(&["A=1", "B=2"]), se.clone())
+			      5001, Some(&["A=1", "B=2"]), sew)
 	    .expect("Unable to allocate watch");
 	se.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	we.w.wait(1, Some(&Duration::new(5, 0))).expect("Wait failed");
@@ -594,14 +593,17 @@ mod tests {
 	let wd = Arc::new(IWatchDone {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
-	w.shutdown(Some(wd.clone())).expect("Shutdown failed");
+	let wd2 = Arc::downgrade(&wd);
+	w.shutdown(Some(wd2)).expect("Shutdown failed");
 	wd.w.wait(1, Some(&Duration::new(5, 0))).expect("Wait failed");
     }
 
     #[test]
     #[serial] // FIXME - figure out why these crash when not serial.
     fn mdns2() {
-	let o = osfuncs::new(Arc::new(LogHandler))
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = osfuncs::new(loghw)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
@@ -615,15 +617,17 @@ mod tests {
 		txt: vec![],
 	    }),
 	});
+	let wew = Arc::downgrade(&we);
 	let _w = m.new_watch(-1, addr::GENSIO_NETTYPE_UNSPEC, None,
 			     Some("=_gensio_rusttest2._tcp"), None, None,
-			     we.clone()).expect("Unable to allocate watch");
+			     wew).expect("Unable to allocate watch");
 	let se = Arc::new(IServiceEvent {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
+	let sew = Arc::downgrade(&se);
 	let _s = m.new_service(-1, addr::GENSIO_NETTYPE_UNSPEC, Some("gensio2"),
 			       Some("=_gensio_rusttest2._tcp"), None, None,
-			       5001, Some(&["A=1", "B=2"]), se.clone())
+			       5001, Some(&["A=1", "B=2"]), sew)
 	    .expect("Unable to allocate watch");
 	// Test automatic cleanup
     }

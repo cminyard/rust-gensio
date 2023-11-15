@@ -50,7 +50,7 @@ pub struct OsFuncs {
 
 /// Allocate an OsFuncs structure.  This takes a log handler for
 /// handling internal logs from gensios and osfuncs.
-pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
+pub fn new(log_func: Weak<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
     let err;
     let o: *const raw::gensio_os_funcs = std::ptr::null();
 
@@ -59,9 +59,7 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
     }
     match err {
 	0 => {
-	    let d = Box::new(GensioLogHandlerData {
-		cb: Arc::downgrade(&log_func)
-	    });
+	    let d = Box::new(GensioLogHandlerData { cb: log_func });
 	    let d = Box::into_raw(d);
 	    unsafe {
 		raw::gensio_rust_set_log(o, log_handler,
@@ -249,7 +247,7 @@ impl OsFuncs {
 
     /// Register a callback to be called when a process termination
     /// signal is received.
-    pub fn register_term_handler(&self, handler: Arc<dyn GensioTermHandler>)
+    pub fn register_term_handler(&self, handler: Weak<dyn GensioTermHandler>)
                                  -> Result<(), i32> {
         let proc_data;
         {
@@ -266,7 +264,7 @@ impl OsFuncs {
             Some(_) => return Err(crate::GE_INUSE)
         }
 
-        *d = Some(Arc::downgrade(&handler));
+        *d = Some(handler);
         let err = unsafe {
             raw::gensio_os_proc_register_term_handler(
                 proc_data, term_handler,
@@ -279,7 +277,7 @@ impl OsFuncs {
     }
 
     /// Register a callback to be called when a SIGHUP is received.
-    pub fn register_hup_handler(&self, handler: Arc<dyn GensioHupHandler>)
+    pub fn register_hup_handler(&self, handler: Weak<dyn GensioHupHandler>)
                                  -> Result<(), i32> {
         let proc_data;
         {
@@ -296,7 +294,7 @@ impl OsFuncs {
             Some(_) => return Err(crate::GE_INUSE)
         }
 
-        *d = Some(Arc::downgrade(&handler));
+        *d = Some(handler);
         let err;
         unsafe {
             err = raw::gensio_os_proc_register_reload_handler(
@@ -312,7 +310,7 @@ impl OsFuncs {
     /// Register a callback to be called when the console window gets
     /// resized.
     pub fn register_winsize_handler(&self, console_iod: *const raw::gensio_iod,
-                                    handler: Arc<dyn GensioWinsizeHandler>)
+                                    handler: Weak<dyn GensioWinsizeHandler>)
                                     -> Result<(), i32> {
         let proc_data;
         {
@@ -329,7 +327,7 @@ impl OsFuncs {
             Some(_) => return Err(crate::GE_INUSE)
         }
 
-        *d = Some(Arc::downgrade(&handler));
+        *d = Some(handler);
         let err;
         unsafe {
             err = raw::gensio_os_proc_register_winsize_handler(
@@ -357,14 +355,14 @@ impl OsFuncs {
     }
 
     /// Allocate a new Timer object for the OsFuncs.
-    pub fn new_timer(&self, handler: Arc<dyn TimeoutHandler>)
+    pub fn new_timer(&self, cb: Weak<dyn TimeoutHandler>)
 		     -> Result<Timer, i32> {
 	let w;
 	unsafe {
 	    w = raw::gensio_os_funcs_alloc_waiter(self.o.o);
 	}
 	let d = Box::new(TimerData { o: self.o.clone(),
-				     handler: Arc::downgrade(&handler),
+				     cb,
 				     freed: false,
 				     stopping: false,
 				     w: w, m: Mutex::new(0) });
@@ -383,10 +381,9 @@ impl OsFuncs {
     }
 
     /// Allocate a new Runner object for the OsFuncs.
-    pub fn new_runner(&self, handler: Arc<dyn RunnerHandler>)
+    pub fn new_runner(&self, handler: Weak<dyn RunnerHandler>)
 		     -> Result<Runner, i32> {
-	let d = Box::new(RunnerData { o: self.o.clone(),
-				      handler: Arc::downgrade(&handler) });
+	let d = Box::new(RunnerData { o: self.o.clone(), handler });
 	let d = Box::into_raw(d);
 	let r;
 	unsafe {
@@ -552,7 +549,7 @@ pub trait TimerStopDoneHandler {
 
 struct TimerData {
     o: Arc<IOsFuncs>,
-    handler: Weak<dyn TimeoutHandler>,
+    cb: Weak<dyn TimeoutHandler>,
     stopping: bool,
     freed: bool,
     w: *const raw::gensio_waiter, // Waits for the timer to stop
@@ -576,7 +573,7 @@ pub struct Timer {
 fn i_timeout_handler(_t: *const raw::gensio_timer,
 		     cb_data: *mut ffi::c_void) {
     let d = cb_data as *mut TimerData;
-    let cb = unsafe { (*d).handler.upgrade() };
+    let cb = unsafe { (*d).cb.upgrade() };
     let cb = match cb {
 	None => return,
 	Some(cb) => cb
@@ -672,7 +669,7 @@ impl Timer {
     }
 
     /// Stop a timer and call a callback when the stop completes.
-    pub fn stop_with_done(&self, cb: Arc<dyn TimerStopDoneHandler>)
+    pub fn stop_with_done(&self, cb: Weak<dyn TimerStopDoneHandler>)
 			  -> Result<(), i32> {
 	unsafe {
 	    let _guard = (*self.d).m.lock().unwrap();
@@ -683,8 +680,7 @@ impl Timer {
 	    if (*self.d).stopping {
 		return Err(crate::GE_INUSE)
 	    }
-	    let d = Box::new(TimerStopData { cb : Arc::downgrade(&cb),
-					     d: self.d });
+	    let d = Box::new(TimerStopData { cb, d: self.d });
 	    let d = Box::into_raw(d);
 	    let err = raw::gensio_os_funcs_stop_timer_with_done(
 		(*self.d).o.o, self.t,
@@ -829,7 +825,9 @@ mod tests {
 
     #[test]
     fn wait_test() {
-	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = new(loghw).expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let w = o.new_waiter().expect("Couldn't allocate Waiter");
 
@@ -849,13 +847,16 @@ mod tests {
     // Normal timer operation, wait for it to time out.
     #[test]
     fn timer_test() {
-	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = new(loghw).expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
+	let hw = Arc::downgrade(&h);
+	let t = o.new_timer(hw).expect("Couldn't allocate Timer");
 
 	t.start(&Duration::new(0, 1000)).expect("Couldn't start timer");
 
@@ -868,13 +869,16 @@ mod tests {
     // See that the cleanup happens on a running timer
     #[test]
     fn timer_test2() {
-	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = new(loghw).expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
+	let hw = Arc::downgrade(&h);
+	let t = o.new_timer(hw).expect("Couldn't allocate Timer");
 
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
     }
@@ -899,31 +903,33 @@ mod tests {
     // Stop the timer and wait for it
     #[test]
     fn timer_test3() {
-	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = new(loghw).expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let s1 = StopTimer3 {
+	let s = Arc::new(StopTimer3 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
             v: Mutex::new(1),
-	};
-	let s2 = Arc::new(s1);
-	let s: Arc<dyn TimerStopDoneHandler> = s2.clone();
-	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
+	});
+	let hw = Arc::downgrade(&h);
+	let t = o.new_timer(hw).expect("Couldn't allocate Timer");
 
         {
             let mut v2 = TESTVAL3.lock().unwrap();
             *v2 = 1;
         }
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
-	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
-	match s2.w.wait(1, Some(&Duration::new(1, 0))) {
+	let sw = Arc::downgrade(&s);
+	t.stop_with_done(sw).expect("Couldn't stop timer");
+	match s.w.wait(1, Some(&Duration::new(1, 0))) {
 	    Ok(_) => (),
 	    Err(e) => assert!(e == 0)
 	}
-        let vv = s2.v.lock().unwrap();
+        let vv = s.v.lock().unwrap();
         assert_eq!(*vv, 10);
     }
 
@@ -948,25 +954,28 @@ mod tests {
     // stopped.
     #[test]
     fn timer_test4() {
-	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = new(loghw).expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let s1 = StopTimer4 {
+	let s = Arc::new(StopTimer4 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
             v: Mutex::new(2),
-	};
-	let s: Arc<dyn TimerStopDoneHandler> = Arc::new(s1);
-	let t = o.new_timer(h.clone()).expect("Couldn't allocate Timer");
+	});
+	let hw = Arc::downgrade(&h);
+	let t = o.new_timer(hw).expect("Couldn't allocate Timer");
         {
             let mut v2 = TESTVAL4.lock().unwrap();
             *v2 = 2;
         }
 
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
-	t.stop_with_done(s.clone()).expect("Couldn't stop timer");
+	let sw = Arc::downgrade(&s);
+	t.stop_with_done(sw).expect("Couldn't stop timer");
     }
 
     struct TermHnd {
@@ -989,12 +998,15 @@ mod tests {
     #[test]
     #[serial]
     fn term_test() {
-	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = new(loghw).expect("Couldn't allocate OsFuncs");
 	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(TermHnd {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-        o.register_term_handler(h.clone()).expect("Couldn't register term handler");
+	let hw = Arc::downgrade(&h);
+        o.register_term_handler(hw).expect("Couldn't register term handler");
         unsafe { send_term_self(); }
         // There are other threads running in the process, if those
         // threads handle the signal, it won't necessarily wake up the
@@ -1029,12 +1041,15 @@ mod tests {
     #[test]
     #[serial]
     fn hup_test() {
-	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = new(loghw).expect("Couldn't allocate OsFuncs");
 	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(HupHnd {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-        o.register_hup_handler(h.clone()).expect("Couldn't register hup handler");
+	let hw = Arc::downgrade(&h);
+        o.register_hup_handler(hw).expect("Couldn't register hup handler");
         unsafe { send_hup_self(); }
 
         // See note in term_test on this loop.
@@ -1066,18 +1081,21 @@ mod tests {
     #[test]
     #[serial]
     fn winsize_test() {
-	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = new(loghw).expect("Couldn't allocate OsFuncs");
 	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(WinsizeHnd {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
+	let hw = Arc::downgrade(&h);
         let iod;
         let o2;
         unsafe {
             o2 = o.raw();
             iod = raw::gensio_add_iod(o2, raw::GENSIO_IOD_CONSOLE, 0);
             assert!(iod != std::ptr::null());
-            o.register_winsize_handler(iod, h.clone())
+            o.register_winsize_handler(iod, hw)
                 .expect("Couldn't register winsize handler");
         }
         // Note that the winsize handler will automatically send the
@@ -1113,13 +1131,16 @@ mod tests {
 
     #[test]
     fn runner_test() {
-	let o = new(Arc::new(LogHandler)).expect("Couldn't allocate OsFuncs");
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = new(loghw).expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleRunner1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let t = o.new_runner(h.clone()).expect("Couldn't allocate Timer");
+	let hw = Arc::downgrade(&h);
+	let t = o.new_runner(hw).expect("Couldn't allocate Timer");
 
 	t.run().expect("Couldn't start timer");
 

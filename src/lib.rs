@@ -517,16 +517,16 @@ impl Event for DummyEvHndl {
     }
 }
 
-fn new_gensio_data(o: &osfuncs::OsFuncs, cb: Arc<dyn Event>,
+fn new_gensio_data(o: &osfuncs::OsFuncs, cb: Weak<dyn Event>,
 	           state: GensioState) -> Result<GensioData, i32> {
     Ok(GensioData {
-        o: o.clone(), cb: Arc::downgrade(&cb), state: Mutex::new(state),
+        o: o.clone(), cb, state: Mutex::new(state),
         close_waiter: o.new_waiter()?,
     })
  }
 
 fn new_gensio(o: &osfuncs::OsFuncs, g: *const raw::gensio,
-	      cb: Arc<dyn Event>, state: GensioState,
+	      cb: Weak<dyn Event>, state: GensioState,
 	      d: Option<*mut GensioData>) -> Result<Gensio, i32>
 {
     let d = match d {
@@ -598,8 +598,12 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	raw::GENSIO_EVENT_NEW_CHANNEL => {
 	    let g2 = buf as *const raw::gensio;
 	    let tmpcb = Arc::new(DummyEvHndl{ });
+	    let tmpcbw = Arc::downgrade(&tmpcb);
+	    // tmpcb will go away in this function, but that's ok, as
+	    // it should never get called, and if it does the code
+	    // will return an error.
 	    let o = unsafe {(*g).o.clone() };
-	    let new_g = match new_gensio(&o, g2, tmpcb,
+	    let new_g = match new_gensio(&o, g2, tmpcbw,
 					 GensioState::Open, None) {
 		Ok(g) => g,
 		Err(e) => return e
@@ -826,7 +830,7 @@ extern "C" fn evhndl(io: *const raw::gensio, user_data: *const ffi::c_void,
 /// Arc holding the reference to the event handler.  This function
 /// clones it so it can make sure the data stays around until the
 /// gensio is closed.  See str_to_gensio() for details.
-pub fn new(s: &str, o: &osfuncs::OsFuncs, cb: Arc<dyn Event>)
+pub fn new(s: &str, o: &osfuncs::OsFuncs, cb: Weak<dyn Event>)
 	   -> Result<Gensio, i32>
 {
     let g: *const raw::gensio = std::ptr::null();
@@ -885,8 +889,8 @@ impl Gensio {
     /// complete.
     ///
     /// Note that the gensio is not open until the callback is called.
-    pub fn open(&self, cb: Arc<dyn OpDoneErr>) -> Result<(), i32> {
-	let d = Box::new(OpDoneErrData { cb : Arc::downgrade(&cb) });
+    pub fn open(&self, cb: Weak<dyn OpDoneErr>) -> Result<(), i32> {
+	let d = Box::new(OpDoneErrData { cb });
 	let d = Box::into_raw(d);
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
 	let err = unsafe {
@@ -905,8 +909,8 @@ impl Gensio {
     }
 
     /// Set a new event handler for the gensio.
-    pub fn set_handler(&self, cb: Arc<dyn Event>) {
-	unsafe { (*self.d).cb = Arc::downgrade(&cb); }
+    pub fn set_handler(&self, cb: Weak<dyn Event>) {
+	unsafe { (*self.d).cb = cb; }
     }
 
     // Open the gensio synchronously.  Wait until the open completes
@@ -928,12 +932,8 @@ impl Gensio {
     /// care.
     ///
     /// Note that the gensio is not closed until the callback is called.
-    pub fn close(&self, cb: Option<Arc<dyn OpDone>>) -> Result<(), i32> {
-	let cb = match cb {
-	    None => None,
-	    Some(cb) => Some(Arc::downgrade(&cb))
-	};
-	let d = Box::new(CloseDoneData { cb : cb, d: self.d });
+    pub fn close(&self, cb: Option<Weak<dyn OpDone>>) -> Result<(), i32> {
+	let d = Box::new(CloseDoneData { cb, d: self.d });
 	let d = Box::into_raw(d);
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
 	let err = unsafe {
@@ -1163,12 +1163,11 @@ impl Gensio {
 
     /// Call gensio_acontrol with the given options.
     pub fn acontrol(&self, depth: i32, get: bool, option: u32,
-		    data: &[u8], done: Option<Arc<dyn ControlDone>>,
+		    data: &[u8], done: Option<Weak<dyn ControlDone>>,
 		    timeout: Option<&Duration>)
 		    -> Result<(), i32> {
 	let d = match done {
-	    Some(v) => Box::into_raw(Box::new(ControlDoneData {
-		cb : Arc::downgrade(&v) })),
+	    Some(cb) => Box::into_raw(Box::new(ControlDoneData { cb })),
 	    None => std::ptr::null_mut()
 	};
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
@@ -1195,7 +1194,7 @@ impl Gensio {
     /// Like acontrol, but taks a string and converts it to nil
     /// terminated bytes for the caller.
     pub fn acontrol_str(&self, depth: i32, get: bool, option: u32,
-			data: &str, done: Option<Arc<dyn ControlDone>>,
+			data: &str, done: Option<Weak<dyn ControlDone>>,
 			timeout: Option<&Duration>)
 			-> Result<(), i32> {
 	
@@ -1561,8 +1560,12 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	raw::GENSIO_ACC_EVENT_NEW_CONNECTION => {
 	    let g = data as *const raw::gensio;
 	    let tmpcb = Arc::new(DummyEvHndl{ });
+	    let tmpcbw = Arc::downgrade(&tmpcb);
+	    // tmpcb will go away in this function, but that's ok, as
+	    // it should never get called, and if it does the code
+	    // will return an error.
 	    let o = unsafe { (*a).o.clone() };
-	    let new_g = match new_gensio(&o, g, tmpcb, GensioState::Open,
+	    let new_g = match new_gensio(&o, g, tmpcbw, GensioState::Open,
 					 None) {
 		Ok(g) => g,
 		Err(e) => return e
@@ -1681,7 +1684,7 @@ extern "C" fn acc_evhndl(acc: *const raw::gensio_accepter,
 /// make sure the data stays around until the gensio is closed.  See
 /// str_to_gensio_accepter.3
 pub fn new_accepter(s: &str, o: &osfuncs::OsFuncs,
-		    cb: Arc<dyn AccepterEvent>)
+		    cb: Weak<dyn AccepterEvent>)
 		    -> Result<Accepter, i32> {
     let a: *const raw::gensio_accepter = std::ptr::null();
     let s = match ffi::CString::new(s) {
@@ -1690,7 +1693,7 @@ pub fn new_accepter(s: &str, o: &osfuncs::OsFuncs,
     };
     // Create the callback data.
     let dt = Box::new(AccepterData { o: o.clone(),
-				     cb: Arc::downgrade(&cb),
+				     cb,
 				     state: Mutex::new(GensioState::Closed),
 				     close_waiter: o.new_waiter()?, });
     let dt = Box::into_raw(dt);
@@ -1758,8 +1761,8 @@ extern "C" fn acc_shutdown_done(io: *const raw::gensio_accepter,
 
 impl Accepter {
     /// Set a new event handler for the accepter.
-    pub fn set_handler(&self, cb: Arc<dyn AccepterEvent>) {
-	unsafe { (*self.d).cb = Arc::downgrade(&cb); }
+    pub fn set_handler(&self, cb: Weak<dyn AccepterEvent>) {
+	unsafe { (*self.d).cb = cb; }
     }
 
     /// Start the accepter running.
@@ -1780,14 +1783,10 @@ impl Accepter {
     /// Stop the accepter.  Note that the accepter is not shut down
     /// until the callback is called.  You can pass in None to the
     /// callback if you don't care.
-    pub fn shutdown(&self, cb: Option<Arc<dyn AccepterShutdownDone>>)
+    pub fn shutdown(&self, cb: Option<Weak<dyn AccepterShutdownDone>>)
 		    -> Result<(), i32> {
-	let cb = match cb {
-	    None => None,
-	    Some(cb) => Some(Arc::downgrade(&cb))
-	};
 	let d = Box::new(
-	    AccepterShutdownDoneData { cb : cb, d: self.d });
+	    AccepterShutdownDoneData { cb, d: self.d });
 	let d = Box::into_raw(d);
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
 	let err = unsafe {
@@ -2089,14 +2088,17 @@ mod tests {
     #[test]
     fn basic_gensio() {
 	init_logger();
-	let o = osfuncs::new(Arc::new(LogHandler))
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = osfuncs::new(loghw)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let e = Arc::new(EvStruct { w: w });
-	let g = new("echo", &o, e.clone()).expect("Couldn't alloc gensio");
-	g.open(e.clone()).expect("Couldn't open genio");
+	let ew = Arc::downgrade(&e);
+	let g = new("echo", &o, ew.clone()).expect("Couldn't alloc gensio");
+	g.open(ew.clone()).expect("Couldn't open genio");
 	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	g.read_enable(true);
 	let v1 = vec!["t1", "t2"];
@@ -2104,7 +2106,7 @@ mod tests {
 			    .expect("Write failed");
 	assert_eq!(count, 7);
 	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
-	g.close(Some(e.clone())).expect("Couldn't close gensio");
+	g.close(Some(ew)).expect("Couldn't close gensio");
 	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
     }
 
@@ -2191,13 +2193,16 @@ mod tests {
     #[test]
     fn parmerr() {
 	init_logger();
-	let o = osfuncs::new(Arc::new(LogHandler))
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = osfuncs::new(loghw)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e = Arc::new(AccEvent { w: w, d: d });
+	let ew = Arc::downgrade(&e);
 
 	{
 	    let mut d = e.d.lock().unwrap();
@@ -2205,7 +2210,7 @@ mod tests {
 		"accepter base: Unknown gensio type: asdf,127.0.0.1:1234"
 		    .to_string());
 	}
-	let a = new_accepter("asdf,127.0.0.1:1234", &o, e.clone());
+	let a = new_accepter("asdf,127.0.0.1:1234", &o, ew);
 	match a {
 	    Ok(_a) => assert!(false),
 	    Err(e) => assert_eq!(e, GE_UNKNOWN_NAME_ERROR)
@@ -2215,14 +2220,17 @@ mod tests {
     #[test]
     fn acc_conn1() {
 	init_logger();
-	let o = osfuncs::new(Arc::new(LogHandler))
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = osfuncs::new(loghw)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e1 = Arc::new(AccEvent { w: w, d: d });
-	let a = new_accepter("tcp,127.0.0.1,0", &o, e1.clone())
+	let e1w = Arc::downgrade(&e1);
+	let a = new_accepter("tcp,127.0.0.1,0", &o, e1w)
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
 	let port = match a.control_str(0, GENSIO_CONTROL_GET,
@@ -2234,7 +2242,8 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
-	let g = new(&format!("tcp,127.0.0.1,{port}"), &o, e2.clone())
+	let e2w = Arc::downgrade(&e2);
+	let g = new(&format!("tcp,127.0.0.1,{port}"), &o, e2w)
 	    .expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
@@ -2245,14 +2254,17 @@ mod tests {
     #[test]
     fn acc_conn2() {
 	init_logger();
-	let o = osfuncs::new(Arc::new(LogHandler))
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = osfuncs::new(loghw)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e1 = Arc::new(AccEvent { w: w, d: d });
-	let a = new_accepter("tcp,127.0.0.1,0", &o, e1.clone())
+	let e1w = Arc::downgrade(&e1);
+	let a = new_accepter("tcp,127.0.0.1,0", &o, e1w.clone())
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
 	let port = match a.control_str(0, GENSIO_CONTROL_GET,
@@ -2264,7 +2276,8 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
-	let g = new(&format!("tcp,127.0.0.1,{port}"), &o, e2.clone()).
+	let e2w = Arc::downgrade(&e2);
+	let g = new(&format!("tcp,127.0.0.1,{port}"), &o, e2w).
 	    expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
@@ -2272,17 +2285,17 @@ mod tests {
 
 	// Assign a handler for the new gensio
 	let e3;
+	let e3w;
 	{
 	    let w = o.new_waiter().expect("Couldn't allocate waiter");
 	    let d = Mutex::new(GenMutData { logstr: None,
 					    experr: GE_REMCLOSE });
 	    e3 = Arc::new(GenEvent { w: w, _g: None, d: d });
+	    e3w = Arc::downgrade(&e3);
 	    let d1 = e1.d.lock().unwrap();
 	    match &d1.ag {
 		None => assert!(false),
-		Some(d2) => {
-		    d2.set_handler(e3.clone());
-		}
+		Some(d2) => d2.set_handler(e3w)
 	    }
 
 	}
@@ -2317,7 +2330,7 @@ mod tests {
 	// Wait for the error from the other end.
 	e3.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 
-	a.shutdown(Some(e1.clone())).expect("Shutdown failed");
+	a.shutdown(Some(e1w)).expect("Shutdown failed");
 	e1.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
     }
 
@@ -2574,11 +2587,11 @@ mod tests {
 	    let mut list = self.list.list.lock().unwrap();
 
 	    let d = TelnetReflectorInstData { ..Default::default() };
-	    let inst = TelnetReflectorInst { g: g,
-					     list: self.list.clone(),
-					     d: Mutex::new(d) };
-	    let inst = Arc::new(inst);
-	    inst.g.set_handler(inst.clone());
+	    let inst = Arc::new(TelnetReflectorInst { g: g,
+						      list: self.list.clone(),
+						      d: Mutex::new(d) });
+	    let instw = Arc::downgrade(&inst);
+	    inst.g.set_handler(instw);
 	    inst.g.read_enable(true);
 	    list.push(inst);
 	    0
@@ -2603,16 +2616,17 @@ mod tests {
 
     fn new_telnet_reflector(o: &osfuncs::OsFuncs)
 			    -> Result<Arc<TelnetReflector>, i32> {
-        let a = new_accepter("telnet(rfc2217),tcp,localhost,0",
-                             o, Arc::new(InitialTelnetReflectorEv{}))?;
+	let h = Arc::new(InitialTelnetReflectorEv{});
+	let hw = Arc::downgrade(&h);
+        let a = new_accepter("telnet(rfc2217),tcp,localhost,0", o, hw)?;
         a.startup()?;
 	let port = a.control_str(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_GET,
 				 GENSIO_ACC_CONTROL_LPORT, "")?;
 	let list = TelnetReflectorInstList {  list: Mutex::new(Vec::new()) };
-	let refl = TelnetReflector { a: Arc::new(a), port: port,
-				     list: Arc::new(list) };
-        let refl = Arc::new(refl);
-	refl.a.set_handler(refl.clone());
+	let refl = Arc::new(TelnetReflector { a: Arc::new(a), port: port,
+					      list: Arc::new(list) });
+        let reflw = Arc::downgrade(&refl);
+	refl.a.set_handler(reflw);
 	Ok(refl)
     }
 
@@ -2673,15 +2687,18 @@ mod tests {
 	    let mut v = e.expect_val.lock().unwrap();
 	    *v = Some(sval.to_string());
 	}
+	let ew = Arc::downgrade(&e);
 	g.acontrol_str(0, GENSIO_CONTROL_SET, option, sval,
-		       Some(e.clone()), None).expect("Acontrol failed");
+		       Some(ew), None).expect("Acontrol failed");
 	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
     }
 
     #[test]
     fn serial() {
 	init_logger();
-	let o = osfuncs::new(Arc::new(LogHandler))
+	let logh = Arc::new(LogHandler);
+	let loghw = Arc::downgrade(&logh);
+	let o = osfuncs::new(loghw)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
@@ -2691,8 +2708,9 @@ mod tests {
 	    w,
 	    expect_val: Mutex::new(None),
 	});
+	let ew = Arc::downgrade(&e);
 	let fs = format!("telnet(rfc2217),tcp,localhost,{}", r.port);
-	let g = new(&fs, &o, e.clone()).expect("Gensio allocation failed");
+	let g = new(&fs, &o, ew).expect("Gensio allocation failed");
 	g.open_s().expect("Open failed");
 	g.read_enable(true);
 
