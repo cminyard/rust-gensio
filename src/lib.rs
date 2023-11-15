@@ -142,6 +142,8 @@ pub const GENSIO_ACONTROL_SER_SIGNATURE: u32 =		1012;
 pub type GensioDS = osfuncs::raw::gensiods;
 
 /// Open callbacks will need to implement this trait.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait OpDoneErr {
     /// Report an error on the operation.  Unlike most other gensio
     /// interfaces, which pass the error in the done() method, the
@@ -157,6 +159,8 @@ struct OpDoneErrData {
 }
 
 /// Acontrol callbacks will need to implement this trait.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait ControlDone {
     /// Report an error on the operation.  Unlike most other gensio
     /// interfaces, which pass the error in the done() method, the
@@ -227,6 +231,8 @@ extern "C" fn op_done_err(io: *const raw::gensio, err: ffi::c_int,
 }
 
 /// Close callbacks will need to implement this trait.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait OpDone {
     /// Report that the operation (close) has completed.
     fn done(&self);
@@ -280,6 +286,8 @@ extern "C" fn close_done(io: *const raw::gensio, user_data: *mut ffi::c_void) {
 
 /// The struct that gets callbacks from a gensio will need to
 /// implement this trait.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait Event {
     /// A log was reported dealing with the gensio.
     fn log(&self, _s: String) {}
@@ -1447,6 +1455,8 @@ impl Drop for Gensio {
 
 /// The struct that gets callbacks from a gensio will need to
 /// implement this trait.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait AccepterEvent {
     /// A log was reported dealing with the gensio.
     fn log(&self, _s: String) {}
@@ -1701,6 +1711,8 @@ pub fn new_accepter(s: &str, o: &osfuncs::OsFuncs,
 }
 
 /// Shutdown callbacks will need to implement this trait.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait AccepterShutdownDone {
     /// Report that the operation (close) has completed.
     fn done(&self);

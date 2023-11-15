@@ -84,6 +84,8 @@ pub fn new(log_func: Arc<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
 }
 
 /// Used for OsFuncs to handle logs.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait GensioLogHandler {
     /// Used to report internal logs from the system that couldn't be
     /// propagated back other ways.
@@ -116,6 +118,8 @@ extern "C" fn log_handler(log: *const ffi::c_char,
 }
 
 /// Used to report a termination signal, Windows or Unix
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait GensioTermHandler {
     fn term_sig(&self);
 }
@@ -144,6 +148,8 @@ extern "C" fn term_handler(data: *mut ffi::c_void) {
 }
 
 /// Used to report a hangup signal, Unix
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait GensioHupHandler {
     fn hup_sig(&self);
 }
@@ -172,6 +178,8 @@ extern "C" fn hup_handler(data: *mut ffi::c_void) {
 }
 
 /// Used to report a window size signal, Unix and Windows
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait GensioWinsizeHandler {
     fn winsize_sig(&self, x_chrs: i32, y_chrs: i32, x_bits: i32, y_bits: i32);
 }
@@ -527,12 +535,16 @@ impl Drop for Waiter {
 }
 
 /// Timer callbacks will need to implement this trait.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait TimeoutHandler {
     /// Report that the timeout has occurred.
     fn timeout(&self);
 }
 
 /// Timer stop done callbacks will need to implement this trait.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait TimerStopDoneHandler {
     /// Report that the operation (timer stop) has completed.
     fn timer_stopped(&self);
@@ -745,6 +757,8 @@ impl Drop for Timer {
 }
 
 /// Runner callbacks will need to implement this trait.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait RunnerHandler {
     /// The runner callback calls this.
     fn runner(&self);

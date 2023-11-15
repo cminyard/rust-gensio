@@ -31,6 +31,9 @@ struct MDNSDoneData {
     cb: Weak<dyn MDNSDone>,
 }
 
+/// Used to report when an MDNS object has finished being freed.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait MDNSDone {
     fn done(&self);
 }
@@ -186,6 +189,9 @@ pub const GENSIO_MDNS_SERVICE_READY: i32 = 1;
 pub const GENSIO_MDNS_SERVICE_READY_NEW_NAME: i32 = 2;
 pub const GENSIO_MDNS_SERVICE_REMOVED: i32 = 3;
 
+/// Used to report that the service is ready or not.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait ServiceEvent {
     fn event(&self, event: i32, info: Option<&str>);
 }
@@ -246,6 +252,9 @@ struct WatchDoneData {
     d: *mut WatchData,
 }
 
+/// Used to report that a watch has finished shutdown.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait WatchDone {
     fn done(&self);
 }
@@ -285,6 +294,9 @@ pub const GENSIO_MDNS_WATCH_NEW_DATA: i32 = 0;
 pub const GENSIO_MDNS_WATCH_DATA_GONE: i32 = 1;
 pub const GENSIO_MDNS_WATCH_ALL_FOR_NOW: i32 = 2;
 
+/// Handles events from the watch.
+/// Note: You must keep this object around because it is stored as Weak.
+/// If you allow this object to be done, the callbacks will stop working.
 pub trait WatchEvent {
     fn watch(&self,
 	     state: i32,
