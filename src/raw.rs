@@ -411,7 +411,7 @@ mod tests {
 
 	let o: *const gensio_os_funcs = std::ptr::null();
 	unsafe {
-	    err = gensio_alloc_os_funcs(-198234, &o);
+	    err = gensio_alloc_os_funcs(-198234, &o, 0);
 	}
 	assert_eq!(err, 0);
 	unsafe {

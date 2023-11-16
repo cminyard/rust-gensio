@@ -71,7 +71,8 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     pub fn gensio_alloc_os_funcs(wake_sig: ffi::c_int,
-			       o: *const *const gensio_os_funcs)
+				 o: *const *const gensio_os_funcs,
+				 flags: ffi::c_uint)
 			       -> ffi::c_int;
 
     #[allow(improper_ctypes)]

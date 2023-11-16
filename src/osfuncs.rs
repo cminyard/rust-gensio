@@ -22,23 +22,21 @@ struct IOsFuncs {
 
 impl Drop for IOsFuncs {
     fn drop(&mut self) {
-        {
-            let l_proc_data = self.proc_data.lock().unwrap();
-            let proc_data = *l_proc_data;
-            if proc_data != std::ptr::null() {
-                unsafe {
-		    raw::gensio_os_proc_cleanup(proc_data);
-	        }
-            }
-
+        let l_proc_data = self.proc_data.lock().unwrap();
+        let proc_data = *l_proc_data;
+        if proc_data != std::ptr::null() {
             unsafe {
-	        if self.log_data != std::ptr::null_mut() {
-		    drop(Box::from_raw(self.log_data));
-	        }
-	        raw::gensio_rust_cleanup(self.o);
-	        raw::gensio_os_funcs_free(self.o);
-            }
-	}
+		raw::gensio_os_proc_cleanup(proc_data);
+	    }
+        }
+
+        unsafe {
+	    if self.log_data != std::ptr::null_mut() {
+		drop(Box::from_raw(self.log_data));
+	    }
+	    raw::gensio_rust_cleanup(self.o);
+	    raw::gensio_os_funcs_free(self.o);
+        }
     }
 }
 
@@ -48,14 +46,22 @@ pub struct OsFuncs {
     o: Arc<IOsFuncs>,
 }
 
+/// For flags on the new function, allocate mutexes (internal an
+/// external) with priority inheritance.  Not supported on all
+/// platforms.
+pub const GENSIO_OS_FUNCS_FLAG_PRIO_INHERIT: u32 = 1 << 0;
+
 /// Allocate an OsFuncs structure.  This takes a log handler for
-/// handling internal logs from gensios and osfuncs.
-pub fn new(log_func: Weak<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
+/// handling internal logs from gensios and osfuncs.  Set the flags to
+/// 0, generally.  There is a priority inheritance flag if you need
+/// that.
+pub fn new_flags(log_func: Weak<dyn GensioLogHandler>,
+		 flags: u32) -> Result<OsFuncs, i32> {
     let err;
     let o: *const raw::gensio_os_funcs = std::ptr::null();
 
     unsafe {
-	err = raw::gensio_alloc_os_funcs(-198234, &o);
+	err = raw::gensio_alloc_os_funcs(-198234, &o, flags as ffi::c_uint);
     }
     match err {
 	0 => {
@@ -79,6 +85,12 @@ pub fn new(log_func: Weak<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
 	}
 	_ => Err(err)
     }
+}
+
+/// Allocate an OsFuncs structure.  This takes a log handler for
+/// handling internal logs from gensios and osfuncs.
+pub fn new(log_func: Weak<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
+    return new_flags(log_func, 0);
 }
 
 /// Used for OsFuncs to handle logs.
