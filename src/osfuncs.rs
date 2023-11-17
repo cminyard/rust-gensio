@@ -625,7 +625,7 @@ fn i_timer_stopped_handler(_t: *const raw::gensio_timer,
 	    (*d2).stopping = false;
 	}
 
-	let cb = (*d).cb.upgrade();
+	let cb = d.cb.upgrade();
 	match cb {
 	    None => (),
 	    Some(cb) => cb.timer_stopped()
