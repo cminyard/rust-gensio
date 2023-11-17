@@ -303,31 +303,26 @@ extern "C" {
     #[allow(improper_ctypes)]
     pub fn gensio_acc_free(a: *const gensio_accepter) -> ffi::c_int;
 
-    #[allow(improper_ctypes)]
     pub fn gensio_loginfo_to_str(vloginfo: *const ffi::c_void)
 				 -> *mut ffi::c_char;
 
-    #[allow(improper_ctypes)]
     pub fn gensio_parmlog_to_str(vloginfo: *const ffi::c_void)
 				 -> *mut ffi::c_char;
 
-    #[allow(improper_ctypes)]
     pub fn gensio_free_loginfo_str(str: *mut ffi::c_char);
 
-    #[allow(improper_ctypes)]
     pub fn gensio_parity_to_str(val: ffi::c_uint) -> *const ffi::c_char;
-    #[allow(improper_ctypes)]
+
     pub fn gensio_str_to_parity(sval: *const ffi::c_char) -> ffi::c_int;
-    #[allow(improper_ctypes)]
+
     pub fn gensio_flowcontrol_to_str(val: ffi::c_uint) -> *const ffi::c_char;
-    #[allow(improper_ctypes)]
+
     pub fn gensio_str_to_flowcontrol(sval: *const ffi::c_char) -> ffi::c_int;
-    #[allow(improper_ctypes)]
+
     pub fn gensio_onoff_to_str(val: ffi::c_uint) -> *const ffi::c_char;
-    #[allow(improper_ctypes)]
+
     pub fn gensio_str_to_onoff(sval: *const ffi::c_char) -> ffi::c_int;
 
-    #[allow(improper_ctypes)]
     pub fn gensio_err_to_str(err: ffi::c_int) -> *const ffi::c_char;
 }
 

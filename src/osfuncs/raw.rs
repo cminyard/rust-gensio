@@ -61,7 +61,6 @@ pub type gensio_rust_log_func = extern "C" fn (log: *const ffi::c_char,
 extern "C" {
     // Note: This must be passed a static variable.  It is not copied,
     // the pointer is used.
-    #[allow(improper_ctypes)]
     pub fn gensio_set_progname(o: *const ffi::c_char) -> ffi::c_int;
 
     #[allow(improper_ctypes)]
