@@ -115,11 +115,11 @@ impl MDNS {
 	let (hostp, _hosth) = optstr_to_cstr(&spec.host)?;
 	let txt1 = match txt {
 	    None => None,
-	    Some(v) => Some(crate::vectoaux(v)?)
+	    Some(v) => Some(crate::strslice_to_auxvec(v)?)
 	};
 	let txt2: *mut *mut ffi::c_char = match txt1 {
 	    None => std::ptr::null_mut(),
-	    Some(ref v) => v.as_ptr() as *mut *mut ffi::c_char
+	    Some(ref v) => v.as_ptr()
 	};
 	let sd = Box::into_raw(sd);
 	// Nothing below here can panic, so it's safe to convert the
@@ -133,7 +133,6 @@ impl MDNS {
 					  service_event, sd as *mut ffi::c_void,
 					  &s)
 	};
-	crate::auxfree(txt1);
 	if err != 0 {
 	    unsafe { drop(Box::from_raw(sd)) };
 	    return Err(err);
@@ -370,8 +369,8 @@ fn i_watch_event(_w: *const raw::gensio_mdns_watch,
 		Err(_) => return
 	    })
 	};
-    let txt = unsafe { crate::auxtovec(txt) };
-    let txt2 = crate::auxvectostrvec(&txt);
+    let txt = unsafe { crate::aux_to_stringvec(txt) };
+    let txt2 = crate::stringvec_to_strvec(&txt);
     let txt3 = txt2.as_deref();
 
     cb.watch(state, &MDNSSpec { iface: spec.iface,

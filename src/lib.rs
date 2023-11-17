@@ -443,8 +443,8 @@ impl std::fmt::Debug for Gensio {
 ///
 /// Convert an auxdata, like from a read callback, to a vector of strings.
 /// You must make sure that auxdata is valid, though it may be null.
-pub unsafe fn auxtovec(auxdata: *const *const ffi::c_char)
-		       -> Option<Vec<String>> {
+pub unsafe fn aux_to_stringvec(auxdata: *const *const ffi::c_char)
+			       -> Option<Vec<String>> {
     if auxdata.is_null() {
 	None
     } else {
@@ -464,7 +464,10 @@ pub unsafe fn auxtovec(auxdata: *const *const ffi::c_char)
     }
 }
 
-pub fn auxvectostrvec(a: &Option<Vec<String>>) -> Option<Vec<&str>> {
+/// Convert an option vector of strings into an option vector of str.
+/// You need this separate from auxtovec because of the lifetime of
+/// the strings.
+pub fn stringvec_to_strvec(a: &Option<Vec<String>>) -> Option<Vec<&str>> {
     match a {
 	None => None,
 	Some(a) =>  {
@@ -477,32 +480,38 @@ pub fn auxvectostrvec(a: &Option<Vec<String>>) -> Option<Vec<&str>> {
     }
 }
 
-/// Convert a vector of strings to a vector of pointers to CString raw
+/// Holder for a vector of pointers to C strings.  Here so the data
+/// will be properly freed on an unwind.
+pub struct CAuxVec {
+    v: Vec<*mut ffi::c_char>,
+}
+
+/// Convert a slice of strings to a vector of pointers to CString raw
 /// values.  You use as_ptr() to get a pointer to the array for
-/// something to pass into a C function that takes char **.  You must
-/// call auxfree() with the returned value, which will consume it and
-/// free the data.
-pub fn vectoaux(vi: &[&str]) -> Result<Vec<*mut ffi::c_char>, i32> {
-    let mut vo: Vec<*mut ffi::c_char> = Vec::new();
+/// something to pass into a C function that takes char **.
+pub fn strslice_to_auxvec(vi: &[&str]) -> Result<CAuxVec, i32> {
+    let mut cauxvec = CAuxVec { v: Vec::new() };
     for i in vi {
 	let cs = match ffi::CString::new(i.to_string()) {
 	    Ok(v) => v,
 	    Err(_) => return Err(GE_INVAL)
 	};
-	vo.push(ffi::CString::into_raw(cs));
+	cauxvec.v.push(ffi::CString::into_raw(cs));
     }
-    Ok(vo)
+    Ok(cauxvec)
 }
 
-// Free the value returned by vectoaux().
-fn auxfree(v: Option<Vec<*mut ffi::c_char>>) {
-    match v {
-	None => (),
-	Some(x) => {
-	    for i in x {
-		let cs = unsafe { ffi::CString::from_raw(i) };
-		drop(cs);
-	    }
+impl CAuxVec {
+    fn as_ptr(&self) -> *mut *mut ffi::c_char {
+	self.v.as_ptr() as *mut *mut ffi::c_char
+    }
+}
+
+impl Drop for CAuxVec {
+    fn drop(&mut self) {
+	for i in &self.v {
+	    let cs = unsafe { ffi::CString::from_raw(*i) };
+	    drop(cs);
 	}
     }
 }
@@ -586,8 +595,8 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    let b = unsafe {
 		std::slice::from_raw_parts(buf as *mut u8, *buflen as usize)
 	    };
-	    let a = unsafe { auxtovec(auxdata) };
-	    let a2 = auxvectostrvec(&a);
+	    let a = unsafe { aux_to_stringvec(auxdata) };
+	    let a2 = stringvec_to_strvec(&a);
 	    let a3 = a2.as_deref();
 	    let count;
 	    (err, count) = cb.read(b, a3);
@@ -612,8 +621,8 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		raw::gensio_set_callback(new_g.g, evhndl,
                                          new_g.d as *mut ffi::c_void);
 	    }
-	    let a = unsafe { auxtovec(auxdata) };
-	    let a2 = auxvectostrvec(&a);
+	    let a = unsafe { aux_to_stringvec(auxdata) };
+	    let a2 = stringvec_to_strvec(&a);
 	    let a3 = a2.as_deref();
 	    err = cb.new_channel(new_g, a3);
 	}
@@ -966,7 +975,7 @@ impl Gensio {
 	let mut count: GensioDS = 0;
 	let a1 = match auxdata {
 	    None => None,
-	    Some(v) => Some(vectoaux(v)?)
+	    Some(v) => Some(strslice_to_auxvec(v)?)
 	};
 	let a2: *mut *mut ffi::c_char = match a1 {
 	    None => std::ptr::null_mut(),
@@ -979,7 +988,6 @@ impl Gensio {
 			      data.len() as GensioDS,
 			      a2 as *const *const ffi::c_char)
 	};
-	auxfree(a1);
 	match err {
 	    0 => Ok(count),
 	    _ => Err(err)
