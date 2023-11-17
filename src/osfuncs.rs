@@ -22,8 +22,8 @@ struct IOsFuncs {
 
 impl Drop for IOsFuncs {
     fn drop(&mut self) {
-        let l_proc_data = self.proc_data.lock().unwrap();
-        let proc_data = *l_proc_data;
+        let proc_data = self.proc_data.lock().unwrap();
+        let proc_data = *proc_data;
         if !proc_data.is_null() {
             unsafe {
 		raw::gensio_os_proc_cleanup(proc_data);

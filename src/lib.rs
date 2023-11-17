@@ -441,8 +441,8 @@ impl std::fmt::Debug for Gensio {
 
 /// # Safety
 ///
-/// Convert an auxdata, like from a read call, to a vector of strings.
-/// You must make sure that auxdata is valid.
+/// Convert an auxdata, like from a read callback, to a vector of strings.
+/// You must make sure that auxdata is valid, though it may be null.
 pub unsafe fn auxtovec(auxdata: *const *const ffi::c_char)
 		       -> Option<Vec<String>> {
     if auxdata.is_null() {
