@@ -66,20 +66,26 @@ pub fn new_flags(log_func: Weak<dyn GensioLogHandler>,
     match err {
 	0 => {
 	    let d = Box::new(GensioLogHandlerData { cb: log_func });
+	    let proc_data = Mutex::new(std::ptr::null());
+	    let term_handler = Arc::new(GensioTermHandlerData
+					{cb: Mutex::new(None)});
+	    let winsize_handler = Arc::new(GensioWinsizeHandlerData
+                                           {cb: Mutex::new(None)});
+	    let hup_handler = Arc::new(GensioHupHandlerData
+                                       {cb: Mutex::new(None)});
 	    let d = Box::into_raw(d);
+	    // Nothing below here can panic, so it's safe to convert
+	    // the Box to raw here.
 	    unsafe {
 		raw::gensio_rust_set_log(o, log_handler,
 					 d as *mut ffi::c_void);
 	    }
             let ios = IOsFuncs {
                 log_data: d, o,
-		proc_data: Mutex::new(std::ptr::null()),
-                term_handler: Arc::new(GensioTermHandlerData
-                                       {cb: Mutex::new(None)}),
-                winsize_handler: Arc::new(GensioWinsizeHandlerData
-                                          {cb: Mutex::new(None)}),
-                hup_handler: Arc::new(GensioHupHandlerData
-                                      {cb: Mutex::new(None)})
+		proc_data,
+                term_handler,
+                winsize_handler,
+                hup_handler,
             };
             Ok(OsFuncs { o: Arc::new(ios) })
 	}
@@ -379,6 +385,8 @@ impl OsFuncs {
 				     w, m: Mutex::new(0) });
 	let d = Box::into_raw(d);
 	let t;
+	// Nothing below here can panic, so it's safe to convert the
+	// box to raw.
 	unsafe {
 	    t = raw::gensio_os_funcs_alloc_timer(self.o.o, timeout_handler,
 						 d as *mut ffi::c_void);
@@ -397,6 +405,8 @@ impl OsFuncs {
 	let d = Box::new(RunnerData { o: self.o.clone(), handler });
 	let d = Box::into_raw(d);
 	let r;
+	// Nothing below here can panic, so it's safe to convert the
+	// box to raw.
 	unsafe {
 	    r = raw::gensio_os_funcs_alloc_runner(self.o.o, runner_handler,
 						  d as *mut ffi::c_void);
@@ -607,8 +617,9 @@ struct TimerStopData {
 fn i_timer_stopped_handler(_t: *const raw::gensio_timer,
 			   cb_data: *mut ffi::c_void) {
     let d = cb_data as *mut TimerStopData;
+    let d = unsafe { Box::from_raw(d) }; // Covert it to Box so it will free.
     unsafe {
-	let d2 = (*d).d;
+	let d2 = d.d;
 	{
 	    let _guard = (*d2).m.lock().unwrap();
 	    (*d2).stopping = false;
@@ -624,7 +635,6 @@ fn i_timer_stopped_handler(_t: *const raw::gensio_timer,
 	if (*d2).freed {
 	    raw::gensio_os_funcs_wake((*d2).o.o, (*d2).w);
 	}
-	drop(Box::from_raw(d));
     }
 }
 
@@ -693,6 +703,8 @@ impl Timer {
 	    }
 	    let d = Box::new(TimerStopData { cb, d: self.d });
 	    let d = Box::into_raw(d);
+	    // Nothing below here can panic, so it's safe to convert the
+	    // box to raw.
 	    let err = raw::gensio_os_funcs_stop_timer_with_done(
 		(*self.d).o.o, self.t,
 		timer_stopped_handler, d as *mut ffi::c_void);

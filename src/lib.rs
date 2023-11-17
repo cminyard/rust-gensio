@@ -835,21 +835,15 @@ pub fn new(s: &str, o: &osfuncs::OsFuncs, cb: Weak<dyn Event>)
     let gd = Box::new(new_gensio_data(&o.clone(), cb.clone(),
                                       GensioState::Closed)?);
     let gd = Box::into_raw(gd);
+
+    // There is nothing in here that can panic or otherwise unwind, so
+    // the drop of "gd" later is safe.
     let err = unsafe {
 	raw::str_to_gensio(s.as_ptr(), o.raw(), evhndl,
 			   gd as *mut ffi::c_void, &g)
     };
     match err {
-	0 => {
-	    Ok(match new_gensio(&o.clone(), g, cb.clone(),
-				GensioState::Closed, Some(gd)) {
-		Ok(g) => g,
-		Err(e) => {
-		    unsafe { raw::gensio_free(g); }
-		    return Err(e);
-		}
-	    })
-	}
+	0 => Ok(Gensio { g, d: gd }),
 	_ => {
 	    unsafe { drop(Box::from_raw(gd)) }; // Free our original box
 	    Err(err)
@@ -882,8 +876,11 @@ impl Gensio {
     /// Note that the gensio is not open until the callback is called.
     pub fn open(&self, cb: Weak<dyn OpDoneErr>) -> Result<(), i32> {
 	let d = Box::new(OpDoneErrData { cb });
-	let d = Box::into_raw(d);
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
+	let d = Box::into_raw(d);
+	// Everything from here to the end of the function shouldn't
+	// panic, so there is no need to worry about unwinding not
+	// recovering the Box.
 	let err = unsafe {
 	    raw::gensio_open(self.g, op_done_err, d as *mut ffi::c_void)
 	};
@@ -925,8 +922,11 @@ impl Gensio {
     /// Note that the gensio is not closed until the callback is called.
     pub fn close(&self, cb: Option<Weak<dyn OpDone>>) -> Result<(), i32> {
 	let d = Box::new(CloseDoneData { cb, d: self.d });
-	let d = Box::into_raw(d);
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
+	let d = Box::into_raw(d);
+	// Everything from here to the end of the function shouldn't
+	// panic, so there is no need to worry about unwinding not
+	// recovering the Box.
 	let err = unsafe {
 	    raw::gensio_close(self.g, close_done, d as *mut ffi::c_void)
 	};
@@ -1157,14 +1157,17 @@ impl Gensio {
 		    data: &[u8], done: Option<Weak<dyn ControlDone>>,
 		    timeout: Option<&Duration>)
 		    -> Result<(), i32> {
-	let d = match done {
-	    Some(cb) => Box::into_raw(Box::new(ControlDoneData { cb })),
-	    None => std::ptr::null_mut()
-	};
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
 	let get = match get { false => 0, true => 1 };
+	let d = match done {
+	    Some(cb) => Box::into_raw(Box::new(ControlDoneData { cb })),
+	    None => std::ptr::null_mut()
+	};
+	// Everything from here to the end of the function shouldn't
+	// panic, so there is no need to worry about unwinding not
+	// recovering the Box.
 	let err = unsafe {
 	    raw::gensio_acontrol(self.g, depth, get, option,
 				 data.as_ptr() as *const ffi::c_void,
@@ -1683,6 +1686,9 @@ pub fn new_accepter(s: &str, o: &osfuncs::OsFuncs,
 				     state: Mutex::new(GensioState::Closed),
 				     close_waiter: o.new_waiter()?, });
     let dt = Box::into_raw(dt);
+    // Everything from here to the end of the function shouldn't
+    // panic, so there is no need to worry about unwinding not
+    // recovering the Box.
     let err = unsafe {
 	raw::str_to_gensio_accepter(s.as_ptr(), o.raw(), acc_evhndl,
 				    dt as *mut ffi::c_void, &a)
@@ -1772,8 +1778,11 @@ impl Accepter {
 		    -> Result<(), i32> {
 	let d = Box::new(
 	    AccepterShutdownDoneData { cb, d: self.d });
-	let d = Box::into_raw(d);
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
+	let d = Box::into_raw(d);
+	// Everything from here to the end of the function shouldn't
+	// panic, so there is no need to worry about unwinding not
+	// recovering the Box.
 	let err = unsafe {
 	    raw::gensio_acc_shutdown(self.a, acc_shutdown_done,
 				     d as *mut ffi::c_void)

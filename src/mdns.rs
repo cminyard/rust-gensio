@@ -87,6 +87,8 @@ impl MDNS {
 
 	let d = Box::new(MDNSDoneData { cb });
 	let d = Box::into_raw(d);
+	// Nothing below here can panic, so it's safe to convert the
+	// box to raw.
 	let err = unsafe { raw::gensio_free_mdns(self.m, mdns_done,
 						 d as *mut ffi::c_void) };
 	if err != 0 {
@@ -106,7 +108,6 @@ impl MDNS {
 	}
 
 	let sd = Box::new(ServiceData { _o: self.o.clone(), cb });
-	let sd = Box::into_raw(sd);
 	let s: *const raw::gensio_mdns_service = std::ptr::null();
 	let (namep, _nameh) = optstr_to_cstr(&spec.name)?;
 	let (typep, _typeh) = optstr_to_cstr(&spec.mtype)?;
@@ -120,6 +121,9 @@ impl MDNS {
 	    None => std::ptr::null_mut(),
 	    Some(ref v) => v.as_ptr() as *mut *mut ffi::c_char
 	};
+	let sd = Box::into_raw(sd);
+	// Nothing below here can panic, so it's safe to convert the
+	// box to raw.
 	let err = unsafe {
 	    raw::gensio_mdns_add_service2(self.m, spec.iface as ffi::c_int,
 					  spec.ipdomain as ffi::c_int,
@@ -150,12 +154,14 @@ impl MDNS {
 	    state: Mutex::new(CloseState::Open),
 	    close_waiter: self.o.new_waiter()?,
 	});
-	let wd = Box::into_raw(wd);
 	let w: *const raw::gensio_mdns_watch = std::ptr::null();
 	let (namep, _nameh) = optstr_to_cstr(&spec.name)?;
 	let (typep, _typeh) = optstr_to_cstr(&spec.mtype)?;
 	let (domainp, _domainh) = optstr_to_cstr(&spec.domain)?;
 	let (hostp, _hosth) = optstr_to_cstr(&spec.host)?;
+	let wd = Box::into_raw(wd);
+	// Nothing below here can panic, so it's safe to convert the
+	// box to raw.
 	let err = unsafe {
 	    raw::gensio_mdns_add_watch(self.m, spec.iface as ffi::c_int,
 				       spec.ipdomain as ffi::c_int,
@@ -398,6 +404,8 @@ impl Watch {
 		  -> Result<(), i32> {
 	let d = Box::new(WatchDoneData { cb, d: self.d });
 	let d = Box::into_raw(d);
+	// Nothing below here can panic, so it's safe to convert the
+	// box to raw.
 	let err = unsafe { raw::gensio_mdns_remove_watch(
 	    self.w, watch_done, d as *mut ffi::c_void) };
 	if err != 0 {
