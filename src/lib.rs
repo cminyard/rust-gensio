@@ -73,10 +73,10 @@ pub enum Error {
 const MAX_ERR_VAL:i32 = 42;
 
 fn val_to_error(val: ffi::c_int) -> Error {
-    if val < 0 || val > MAX_ERR_VAL {
-	Error::Inval
-    } else {
+    if (0..MAX_ERR_VAL + 1).contains(&val) {
 	unsafe { std::mem::transmute(val) }
+    } else {
+	Error::Inval
     }
 }
 
