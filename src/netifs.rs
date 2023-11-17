@@ -142,8 +142,7 @@ mod tests {
     #[test]
     fn netifs() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = osfuncs::new(loghw)
+	let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 

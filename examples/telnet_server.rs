@@ -281,8 +281,7 @@ impl gensio::AccepterEvent for TelnetReflector {
 	let inst = Arc::new(TelnetReflectorInst { g: g,
 						  list: self.list.clone(),
 						  d: Mutex::new(d) });
-	let instw = Arc::downgrade(&inst);
-	inst.g.set_handler(instw);
+	inst.g.set_handler(Arc::downgrade(&inst) as _);
 	inst.g.read_enable(true);
 	list.push(inst);
 	0
@@ -310,10 +309,9 @@ fn new_telnet_reflector(o: &osfuncs::OsFuncs, port: &str)
     let mut astr = "telnet(rfc2217),tcp,localhost,0".to_string();
     astr.push_str(port);
     let ae = Arc::new(InitialTelnetReflectorEv{});
-    let aew = Arc::downgrade(&ae);
     // ae will go away when this function ends, but gets replaced in the
     // accepter before then.
-    let a = gensio::new_accepter(&astr, o, aew)?;
+    let a = gensio::new_accepter(&astr, o, Arc::downgrade(&ae) as _)?;
     a.startup()?;
     let port = a.control_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
 			     gensio::GENSIO_CONTROL_GET,
@@ -322,8 +320,7 @@ fn new_telnet_reflector(o: &osfuncs::OsFuncs, port: &str)
     let refl = Arc::new(TelnetReflector {
 	a: Arc::new(a), port, list: Arc::new(list),
     });
-    let reflw = Arc::downgrade(&refl);
-    refl.a.set_handler(reflw);
+    refl.a.set_handler(Arc::downgrade(&refl) as _);
     Ok(refl)
 }
 
@@ -343,8 +340,7 @@ fn main() {
     }
 
     let logh = Arc::new(LogHandler);
-    let loghw = Arc::downgrade(&logh);
-    let o = osfuncs::new(loghw)
+    let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	.expect("Couldn't allocate os funcs");
     o.proc_setup().expect("Couldn't setup thread");
     let r = new_telnet_reflector(&o, port).expect("Allocate reflector failed");

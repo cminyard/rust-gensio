@@ -101,8 +101,7 @@ fn main() {
     telnetstr.push_str(&args[1]);
 
     let logh = Arc::new(LogHandler);
-    let loghw = Arc::downgrade(&logh);
-    let o = osfuncs::new(loghw)
+    let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	.expect("Couldn't allocate os funcs");
     o.proc_setup().expect("Couldn't setup thread");
 
@@ -115,11 +114,9 @@ fn main() {
     let w = Arc::new(o.new_waiter().expect("Unable to allocate waiter 1"));
     let ev1 = Arc::new(ClientEvent { w: w.clone(), io: io1.clone(),
 				     otherio: io2.clone() });
+    ev1.io.set_handler(Arc::downgrade(&ev1) as _);
     let ev2 = Arc::new(ClientEvent { w: w.clone(), io: io2, otherio: io1 });
-    let ev1w = Arc::downgrade(&ev1);
-    ev1.io.set_handler(ev1w);
-    let ev2w = Arc::downgrade(&ev2);
-    ev2.io.set_handler(ev2w);
+    ev2.io.set_handler(Arc::downgrade(&ev2) as _);
 
     ev1.io.open_s().expect("Open of stdio failed");
     ev2.io.open_s().expect("Open of telnet failed");

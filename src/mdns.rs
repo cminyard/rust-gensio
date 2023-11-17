@@ -555,8 +555,7 @@ mod tests {
     #[serial] // FIXME - figure out why these crash when not serial.
     fn mdns1() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = osfuncs::new(loghw)
+	let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
@@ -570,17 +569,17 @@ mod tests {
 		txt: vec!["A=1".to_string(), "B=2".to_string()],
 	    }),
 	});
-	let wew = Arc::downgrade(&we);
 	let w = m.new_watch(-1, addr::GENSIO_NETTYPE_UNSPEC, None,
 			    Some("=_gensio_rusttest._tcp"), None, None,
-			    wew).expect("Unable to allocate watch");
+			    Arc::downgrade(&we) as _)
+	    .expect("Unable to allocate watch");
 	let se = Arc::new(IServiceEvent {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
-	let sew = Arc::downgrade(&se);
 	let s = m.new_service(-1, addr::GENSIO_NETTYPE_UNSPEC, Some("gensio1"),
 			      Some("_gensio_rusttest._tcp"), None, None,
-			      5001, Some(&["A=1", "B=2"]), sew)
+			      5001, Some(&["A=1", "B=2"]),
+			      Arc::downgrade(&se) as _)
 	    .expect("Unable to allocate watch");
 	se.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	we.w.wait(1, Some(&Duration::new(5, 0))).expect("Wait failed");
@@ -593,8 +592,7 @@ mod tests {
 	let wd = Arc::new(IWatchDone {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
-	let wd2 = Arc::downgrade(&wd);
-	w.shutdown(Some(wd2)).expect("Shutdown failed");
+	w.shutdown(Some(Arc::downgrade(&wd) as _)).expect("Shutdown failed");
 	wd.w.wait(1, Some(&Duration::new(5, 0))).expect("Wait failed");
     }
 
@@ -602,8 +600,7 @@ mod tests {
     #[serial] // FIXME - figure out why these crash when not serial.
     fn mdns2() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = osfuncs::new(loghw)
+	let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
@@ -617,17 +614,17 @@ mod tests {
 		txt: vec![],
 	    }),
 	});
-	let wew = Arc::downgrade(&we);
 	let _w = m.new_watch(-1, addr::GENSIO_NETTYPE_UNSPEC, None,
 			     Some("=_gensio_rusttest2._tcp"), None, None,
-			     wew).expect("Unable to allocate watch");
+			     Arc::downgrade(&we) as _)
+	    .expect("Unable to allocate watch");
 	let se = Arc::new(IServiceEvent {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
-	let sew = Arc::downgrade(&se);
 	let _s = m.new_service(-1, addr::GENSIO_NETTYPE_UNSPEC, Some("gensio2"),
 			       Some("=_gensio_rusttest2._tcp"), None, None,
-			       5001, Some(&["A=1", "B=2"]), sew)
+			       5001, Some(&["A=1", "B=2"]),
+			       Arc::downgrade(&se) as _)
 	    .expect("Unable to allocate watch");
 	// Test automatic cleanup
     }

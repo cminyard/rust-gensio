@@ -838,8 +838,8 @@ mod tests {
     #[test]
     fn wait_test() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = new(loghw).expect("Couldn't allocate OsFuncs");
+	let o = new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let w = o.new_waiter().expect("Couldn't allocate Waiter");
 
@@ -860,15 +860,15 @@ mod tests {
     #[test]
     fn timer_test() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = new(loghw).expect("Couldn't allocate OsFuncs");
+	let o = new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let hw = Arc::downgrade(&h);
-	let t = o.new_timer(hw).expect("Couldn't allocate Timer");
+	let t = o.new_timer(Arc::downgrade(&h) as _)
+	    .expect("Couldn't allocate Timer");
 
 	t.start(&Duration::new(0, 1000)).expect("Couldn't start timer");
 
@@ -882,15 +882,15 @@ mod tests {
     #[test]
     fn timer_test2() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = new(loghw).expect("Couldn't allocate OsFuncs");
+	let o = new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleTimeout1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let hw = Arc::downgrade(&h);
-	let t = o.new_timer(hw).expect("Couldn't allocate Timer");
+	let t = o.new_timer(Arc::downgrade(&h) as _)
+	    .expect("Couldn't allocate Timer");
 
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
     }
@@ -916,8 +916,8 @@ mod tests {
     #[test]
     fn timer_test3() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = new(loghw).expect("Couldn't allocate OsFuncs");
+	let o = new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleTimeout1 {
@@ -927,16 +927,15 @@ mod tests {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
             v: Mutex::new(1),
 	});
-	let hw = Arc::downgrade(&h);
-	let t = o.new_timer(hw).expect("Couldn't allocate Timer");
+	let t = o.new_timer(Arc::downgrade(&h) as _)
+	    .expect("Couldn't allocate Timer");
 
         {
             let mut v2 = TESTVAL3.lock().unwrap();
             *v2 = 1;
         }
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
-	let sw = Arc::downgrade(&s);
-	t.stop_with_done(sw).expect("Couldn't stop timer");
+	t.stop_with_done(Arc::downgrade(&s) as _).expect("Couldn't stop timer");
 	match s.w.wait(1, Some(&Duration::new(1, 0))) {
 	    Ok(_) => (),
 	    Err(e) => assert!(e == 0)
@@ -967,8 +966,8 @@ mod tests {
     #[test]
     fn timer_test4() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = new(loghw).expect("Couldn't allocate OsFuncs");
+	let o = new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleTimeout1 {
@@ -978,16 +977,15 @@ mod tests {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
             v: Mutex::new(2),
 	});
-	let hw = Arc::downgrade(&h);
-	let t = o.new_timer(hw).expect("Couldn't allocate Timer");
+	let t = o.new_timer(Arc::downgrade(&h) as _)
+	    .expect("Couldn't allocate Timer");
         {
             let mut v2 = TESTVAL4.lock().unwrap();
             *v2 = 2;
         }
 
 	t.start(&Duration::new(100, 0)).expect("Couldn't start timer");
-	let sw = Arc::downgrade(&s);
-	t.stop_with_done(sw).expect("Couldn't stop timer");
+	t.stop_with_done(Arc::downgrade(&s) as _).expect("Couldn't stop timer");
     }
 
     struct TermHnd {
@@ -1011,14 +1009,14 @@ mod tests {
     #[serial]
     fn term_test() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = new(loghw).expect("Couldn't allocate OsFuncs");
+	let o = new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate OsFuncs");
 	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(TermHnd {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let hw = Arc::downgrade(&h);
-        o.register_term_handler(hw).expect("Couldn't register term handler");
+        o.register_term_handler(Arc::downgrade(&h) as _)
+	    .expect("Couldn't register term handler");
         unsafe { send_term_self(); }
         // There are other threads running in the process, if those
         // threads handle the signal, it won't necessarily wake up the
@@ -1054,14 +1052,14 @@ mod tests {
     #[serial]
     fn hup_test() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = new(loghw).expect("Couldn't allocate OsFuncs");
+	let o = new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate OsFuncs");
 	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(HupHnd {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let hw = Arc::downgrade(&h);
-        o.register_hup_handler(hw).expect("Couldn't register hup handler");
+        o.register_hup_handler(Arc::downgrade(&h) as _)
+	    .expect("Couldn't register hup handler");
         unsafe { send_hup_self(); }
 
         // See note in term_test on this loop.
@@ -1094,20 +1092,19 @@ mod tests {
     #[serial]
     fn winsize_test() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = new(loghw).expect("Couldn't allocate OsFuncs");
+	let o = new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate OsFuncs");
 	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(WinsizeHnd {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let hw = Arc::downgrade(&h);
         let iod;
         let o2;
         unsafe {
             o2 = o.raw();
             iod = raw::gensio_add_iod(o2, raw::GENSIO_IOD_CONSOLE, 0);
             assert!(iod != std::ptr::null());
-            o.register_winsize_handler(iod, hw)
+            o.register_winsize_handler(iod, Arc::downgrade(&h) as _)
                 .expect("Couldn't register winsize handler");
         }
         // Note that the winsize handler will automatically send the
@@ -1144,15 +1141,15 @@ mod tests {
     #[test]
     fn runner_test() {
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = new(loghw).expect("Couldn't allocate OsFuncs");
+	let o = new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let h = Arc::new(HandleRunner1 {
 	    w: o.new_waiter().expect("Couldn't allocate Waiter"),
 	});
-	let hw = Arc::downgrade(&h);
-	let t = o.new_runner(hw).expect("Couldn't allocate Timer");
+	let t = o.new_runner(Arc::downgrade(&h) as _)
+	    .expect("Couldn't allocate Timer");
 
 	t.run().expect("Couldn't start timer");
 

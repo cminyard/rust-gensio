@@ -598,12 +598,11 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	raw::GENSIO_EVENT_NEW_CHANNEL => {
 	    let g2 = buf as *const raw::gensio;
 	    let tmpcb = Arc::new(DummyEvHndl{ });
-	    let tmpcbw = Arc::downgrade(&tmpcb);
 	    // tmpcb will go away in this function, but that's ok, as
 	    // it should never get called, and if it does the code
 	    // will return an error.
 	    let o = unsafe {(*g).o.clone() };
-	    let new_g = match new_gensio(&o, g2, tmpcbw,
+	    let new_g = match new_gensio(&o, g2, Arc::downgrade(&tmpcb) as _,
 					 GensioState::Open, None) {
 		Ok(g) => g,
 		Err(e) => return e
@@ -1560,13 +1559,12 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	raw::GENSIO_ACC_EVENT_NEW_CONNECTION => {
 	    let g = data as *const raw::gensio;
 	    let tmpcb = Arc::new(DummyEvHndl{ });
-	    let tmpcbw = Arc::downgrade(&tmpcb);
 	    // tmpcb will go away in this function, but that's ok, as
 	    // it should never get called, and if it does the code
 	    // will return an error.
 	    let o = unsafe { (*a).o.clone() };
-	    let new_g = match new_gensio(&o, g, tmpcbw, GensioState::Open,
-					 None) {
+	    let new_g = match new_gensio(&o, g, Arc::downgrade(&tmpcb) as _,
+					 GensioState::Open, None) {
 		Ok(g) => g,
 		Err(e) => return e
 	    };
@@ -2089,8 +2087,7 @@ mod tests {
     fn basic_gensio() {
 	init_logger();
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = osfuncs::new(loghw)
+	let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
@@ -2194,15 +2191,13 @@ mod tests {
     fn parmerr() {
 	init_logger();
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = osfuncs::new(loghw)
+	let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e = Arc::new(AccEvent { w: w, d: d });
-	let ew = Arc::downgrade(&e);
 
 	{
 	    let mut d = e.d.lock().unwrap();
@@ -2210,7 +2205,8 @@ mod tests {
 		"accepter base: Unknown gensio type: asdf,127.0.0.1:1234"
 		    .to_string());
 	}
-	let a = new_accepter("asdf,127.0.0.1:1234", &o, ew);
+	let a = new_accepter("asdf,127.0.0.1:1234", &o,
+			     Arc::downgrade(&e) as _);
 	match a {
 	    Ok(_a) => assert!(false),
 	    Err(e) => assert_eq!(e, GE_UNKNOWN_NAME_ERROR)
@@ -2221,16 +2217,15 @@ mod tests {
     fn acc_conn1() {
 	init_logger();
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = osfuncs::new(loghw)
+	let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e1 = Arc::new(AccEvent { w: w, d: d });
-	let e1w = Arc::downgrade(&e1);
-	let a = new_accepter("tcp,127.0.0.1,0", &o, e1w)
+	let a = new_accepter("tcp,127.0.0.1,0", &o,
+			     Arc::downgrade(&e1) as _)
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
 	let port = match a.control_str(0, GENSIO_CONTROL_GET,
@@ -2242,8 +2237,8 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
-	let e2w = Arc::downgrade(&e2);
-	let g = new(&format!("tcp,127.0.0.1,{port}"), &o, e2w)
+	let g = new(&format!("tcp,127.0.0.1,{port}"), &o,
+		    Arc::downgrade(&e2) as _)
 	    .expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
@@ -2255,8 +2250,7 @@ mod tests {
     fn acc_conn2() {
 	init_logger();
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = osfuncs::new(loghw)
+	let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
@@ -2276,8 +2270,8 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
-	let e2w = Arc::downgrade(&e2);
-	let g = new(&format!("tcp,127.0.0.1,{port}"), &o, e2w).
+	let g = new(&format!("tcp,127.0.0.1,{port}"), &o,
+		    Arc::downgrade(&e2) as _).
 	    expect("Couldn't alocate gensio");
 	g.open_s().expect("Couldn't open gensio");
 
@@ -2285,17 +2279,15 @@ mod tests {
 
 	// Assign a handler for the new gensio
 	let e3;
-	let e3w;
 	{
 	    let w = o.new_waiter().expect("Couldn't allocate waiter");
 	    let d = Mutex::new(GenMutData { logstr: None,
 					    experr: GE_REMCLOSE });
 	    e3 = Arc::new(GenEvent { w: w, _g: None, d: d });
-	    e3w = Arc::downgrade(&e3);
 	    let d1 = e1.d.lock().unwrap();
 	    match &d1.ag {
 		None => assert!(false),
-		Some(d2) => d2.set_handler(e3w)
+		Some(d2) => d2.set_handler(Arc::downgrade(&e3) as _)
 	    }
 
 	}
@@ -2590,8 +2582,7 @@ mod tests {
 	    let inst = Arc::new(TelnetReflectorInst { g: g,
 						      list: self.list.clone(),
 						      d: Mutex::new(d) });
-	    let instw = Arc::downgrade(&inst);
-	    inst.g.set_handler(instw);
+	    inst.g.set_handler(Arc::downgrade(&inst) as _);
 	    inst.g.read_enable(true);
 	    list.push(inst);
 	    0
@@ -2617,16 +2608,15 @@ mod tests {
     fn new_telnet_reflector(o: &osfuncs::OsFuncs)
 			    -> Result<Arc<TelnetReflector>, i32> {
 	let h = Arc::new(InitialTelnetReflectorEv{});
-	let hw = Arc::downgrade(&h);
-        let a = new_accepter("telnet(rfc2217),tcp,localhost,0", o, hw)?;
+        let a = new_accepter("telnet(rfc2217),tcp,localhost,0", o,
+			     Arc::downgrade(&h) as _)?;
         a.startup()?;
 	let port = a.control_str(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_GET,
 				 GENSIO_ACC_CONTROL_LPORT, "")?;
 	let list = TelnetReflectorInstList {  list: Mutex::new(Vec::new()) };
 	let refl = Arc::new(TelnetReflector { a: Arc::new(a), port: port,
 					      list: Arc::new(list) });
-        let reflw = Arc::downgrade(&refl);
-	refl.a.set_handler(reflw);
+	refl.a.set_handler(Arc::downgrade(&refl) as _);
 	Ok(refl)
     }
 
@@ -2687,9 +2677,9 @@ mod tests {
 	    let mut v = e.expect_val.lock().unwrap();
 	    *v = Some(sval.to_string());
 	}
-	let ew = Arc::downgrade(&e);
 	g.acontrol_str(0, GENSIO_CONTROL_SET, option, sval,
-		       Some(ew), None).expect("Acontrol failed");
+		       Some(Arc::downgrade(&e) as _), None)
+	    .expect("Acontrol failed");
 	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
     }
 
@@ -2697,8 +2687,7 @@ mod tests {
     fn serial() {
 	init_logger();
 	let logh = Arc::new(LogHandler);
-	let loghw = Arc::downgrade(&logh);
-	let o = osfuncs::new(loghw)
+	let o = osfuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
@@ -2708,9 +2697,9 @@ mod tests {
 	    w,
 	    expect_val: Mutex::new(None),
 	});
-	let ew = Arc::downgrade(&e);
 	let fs = format!("telnet(rfc2217),tcp,localhost,{}", r.port);
-	let g = new(&fs, &o, ew).expect("Gensio allocation failed");
+	let g = new(&fs, &o, Arc::downgrade(&e) as _)
+	    .expect("Gensio allocation failed");
 	g.open_s().expect("Open failed");
 	g.read_enable(true);
 
