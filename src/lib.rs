@@ -67,77 +67,96 @@ pub const GE_NAME_INVALID:		i32 = 41;
 pub const GE_NAME_NET_NOT_UP:		i32 = 42;
 
 /// Values for the first parameter of control functions.
-pub const GENSIO_CONTROL_DEPTH_ALL: i32 =	-1;
-pub const GENSIO_CONTROL_DEPTH_FIRST: i32 =	-2;
+pub const CONTROL_DEPTH_ALL: i32 =	-1;
+pub const CONTROL_DEPTH_FIRST: i32 =	-2;
 
 /// Values for the second parameter of control functions.
-pub const GENSIO_CONTROL_GET: bool =	true;
-pub const GENSIO_CONTROL_SET: bool =	false;
+#[derive(Copy,Clone)]
+pub enum ControlDir { Get, Set, }
+
+fn control_dir_to_cbool(dir: ControlDir) -> ffi::c_int {
+    match dir { ControlDir::Get => 1, ControlDir::Set => 0 }
+}
 
 /// Values for the third parameter of control functions.  See gensio_control.3
-pub const GENSIO_CONTROL_NODELAY: u32 =			1;
-pub const GENSIO_CONTROL_STREAMS: u32 =			2;
-pub const GENSIO_CONTROL_SEND_BREAK: u32 =		3;
-pub const GENSIO_CONTROL_GET_PEER_CERT_NAME: u32 =	4;
-pub const GENSIO_CONTROL_CERT_AUTH: u32 =		5;
-pub const GENSIO_CONTROL_USERNAME: u32 =		6;
-pub const GENSIO_CONTROL_SERVICE: u32 =			7;
-pub const GENSIO_CONTROL_CERT: u32 =			8;
-pub const GENSIO_CONTROL_CERT_FINGERPRINT: u32 =	9;
-pub const GENSIO_CONTROL_ENVIRONMENT: u32 =		10;
-pub const GENSIO_CONTROL_MAX_WRITE_PACKET: u32 =	11;
-pub const GENSIO_CONTROL_ARGS: u32 =			12;
-pub const GENSIO_CONTROL_EXIT_CODE: u32 =		13;
-pub const GENSIO_CONTROL_WAIT_TASK: u32 =		14;
-pub const GENSIO_CONTROL_ADD_MCAST: u32 =		15;
-pub const GENSIO_CONTROL_DEL_MCAST: u32 =		16;
-pub const GENSIO_CONTROL_LADDR: u32 =			17;
-pub const GENSIO_CONTROL_LPORT: u32 =			18;
-pub const GENSIO_CONTROL_CLOSE_OUTPUT: u32 =		19;
-pub const GENSIO_CONTROL_CONNECT_ADDR_STR: u32 =	20;
-pub const GENSIO_CONTROL_RADDR: u32 =			21;
-pub const GENSIO_CONTROL_RADDR_BIN: u32 =		22;
-pub const GENSIO_CONTROL_REMOTE_ID: u32 =		23;
-pub const GENSIO_CONTROL_KILL_TASK: u32 =		24;
-pub const GENSIO_CONTROL_MCAST_LOOP: u32 =		25;
-pub const GENSIO_CONTROL_MCAST_TTL: u32 =		26;
-pub const GENSIO_CONTROL_PASSWORD: u32 =		27;
-pub const GENSIO_CONTROL_2FA: u32 =			28;
-pub const GENSIO_CONTROL_AUX_DATA: u32 =		29;
-pub const GENSIO_CONTROL_REM_AUX_DATA: u32 =		30;
-pub const GENSIO_CONTROL_IOD: u32 =			31;
-pub const GENSIO_CONTROL_EXTRAINFO: u32 =		32;
-pub const GENSIO_CONTROL_ENABLE_OOB: u32 =		33;
-pub const GENSIO_CONTROL_WIN_SIZE: u32 =		34;
-pub const GENSIO_CONTROL_START_DIRECTORY: u32 =		35;
-pub const GENSIO_CONTROL_IN_RATE: u32 =			36;
-pub const GENSIO_CONTROL_OUT_RATE: u32 =		37;
-pub const GENSIO_CONTROL_IN_BUFSIZE: u32 =		38;
-pub const GENSIO_CONTROL_OUT_BUFSIZE: u32 =		39;
-pub const GENSIO_CONTROL_IN_NR_CHANS: u32 =		40;
-pub const GENSIO_CONTROL_OUT_NR_CHANS: u32 =		41;
-pub const GENSIO_CONTROL_IN_FORMAT: u32 =		42;
-pub const GENSIO_CONTROL_OUT_FORMAT: u32 =		43;
-pub const GENSIO_CONTROL_DRAIN_COUNT: u32 =		44;
-pub const GENSIO_CONTROL_SER_MODEMSTATE: u32 =		45;
-pub const GENSIO_CONTROL_SER_FLOWCONTROL_STATE: u32 =	46;
-pub const GENSIO_CONTROL_SER_FLUSH: u32 =		47;
-pub const GENSIO_CONTROL_SER_SEND_BREAK: u32 =		48;
-pub const GENSIO_CONTROL_SER_LINESTATE: u32 =		49;
+#[derive(Copy,Clone)]
+pub enum ControlOp {
+    NoDelay		= 1,
+    Streams		= 2,
+    SendBreak		= 3,
+    GetPeerCertName	= 4,
+    CertAuth		= 5,
+    Username		= 6,
+    Service		= 7,
+    Cert		= 8,
+    CertFingerprint	= 9,
+    Environment		= 10,
+    MaxWritePacket	= 11,
+    Args		= 12,
+    ExitCode		= 13,
+    WaitTask		= 14,
+    AddMCast		= 15,
+    DelMCast		= 16,
+    LAddr		= 17,
+    LPort		= 18,
+    CloseOutput		= 19,
+    ConnectAddrStr	= 20,
+    Raddr		= 21,
+    RaddrBin		= 22,
+    RemoteId		= 23,
+    KillTask		= 24,
+    McastLoop		= 25,
+    McastTTL		= 26,
+    Password		= 27,
+    Get2FA		= 28,
+    AuxData		= 29,
+    RemAuxData		= 30,
+    IOD			= 31,
+    ExtraInfo		= 32,
+    EnableOOB		= 33,
+    WinSize		= 34,
+    StartDirectory	= 35,
+    InRate		= 36,
+    OutRate		= 37,
+    InBufsize		= 38,
+    OutBufsize		= 39,
+    InNrChans		= 40,
+    OutNrChans		= 41,
+    InFormat		= 42,
+    OutFormat		= 43,
+    DrainCount		= 44,
+    SerModemState	= 45,
+    SerFlowcontrolState	= 46,
+    SerFlush		= 47,
+    SerSendBreak	= 48,
+    SerLinestate	= 49,
+}
 
-pub const GENSIO_ACONTROL_SER_BAUD: u32 =		1000;
-pub const GENSIO_ACONTROL_SER_DATASIZE: u32 =		1001;
-pub const GENSIO_ACONTROL_SER_PARITY: u32 =		1002;
-pub const GENSIO_ACONTROL_SER_STOPBITS: u32 =		1003;
-pub const GENSIO_ACONTROL_SER_FLOWCONTROL: u32 =	1004;
-pub const GENSIO_ACONTROL_SER_IFLOWCONTROL: u32 =	1005;
-pub const GENSIO_ACONTROL_SER_SBREAK: u32 =		1006;
-pub const GENSIO_ACONTROL_SER_DTR: u32 =		1007;
-pub const GENSIO_ACONTROL_SER_RTS: u32 =		1008;
-pub const GENSIO_ACONTROL_SER_CTS: u32 =		1009;
-pub const GENSIO_ACONTROL_SER_DCD_DSR: u32 =		1010;
-pub const GENSIO_ACONTROL_SER_RI: u32 =			1011;
-pub const GENSIO_ACONTROL_SER_SIGNATURE: u32 =		1012;
+fn control_op_to_val(op: ControlOp) -> ffi::c_uint {
+    op as ffi::c_uint
+}
+
+/// Values for the third parameter of acontrol() and friends
+#[derive(Copy,Clone)]
+pub enum AControlOp {
+    SerBaud		= 1000,
+    SerDatasize		= 1001,
+    SerParity		= 1002,
+    SerStopbits		= 1003,
+    SerFlowcontrol	= 1004,
+    SerIFlowcontrol	= 1005,
+    SerSBreak		= 1006,
+    SerDtr		= 1007,
+    SerRts		= 1008,
+    SerCts		= 1009,
+    SerDcdDsr		= 1010,
+    SerRI		= 1011,
+    SerSignature	= 1012,
+}
+
+fn acontrol_op_to_val(op: AControlOp) -> ffi::c_uint {
+    op as ffi::c_uint
+}
 
 pub type GensioDS = osfuncs::raw::gensiods;
 
@@ -1100,11 +1119,10 @@ impl Gensio {
 	}
     }
 
-
     /// Call gensio_control() with the given options.  As much data as
     /// can be held is stored in data upon return and the required
     /// size to return all data is returned in Ok().
-    pub fn control(&self, depth: i32, get: bool, option: u32,
+    pub fn control(&self, depth: i32, dir: ControlDir, option: ControlOp,
 		   data: &mut Vec<u8>) -> Result<usize, i32> {
 	let err;
 	let mut len: GensioDS;
@@ -1116,7 +1134,8 @@ impl Gensio {
 		data.push(0);
 		len = 1;
 	    }
-	    err = raw::gensio_control(self.g, depth, get as i32, option,
+	    err = raw::gensio_control(self.g, depth, control_dir_to_cbool(dir),
+				      control_op_to_val(option),
 				      data.as_mut_ptr() as *mut ffi::c_void,
 				      &mut len);
 	}
@@ -1131,17 +1150,17 @@ impl Gensio {
     }
 
     /// Call gensio_control() and return a vector holding the result.
-    pub fn control_resize(&self, depth: i32, get: bool, option: u32,
+    pub fn control_resize(&self, depth: i32, dir: ControlDir, option: ControlOp,
 			  data: &[u8]) -> Result<Vec<u8>, i32> {
 	let mut len: usize;
 	let mut data2 = data.to_vec();
-	len = self.control(depth, get, option, &mut data2)?;
+	len = self.control(depth, dir, option, &mut data2)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
 	let mut data2 = data.to_vec();
 	data2.reserve(len + 1); // Add 1 for C string terminator
-	len = self.control(depth, get, option, &mut data2)?;
+	len = self.control(depth, dir, option, &mut data2)?;
 	if len >= data2.capacity() {
 	    Err(GE_TOOBIG)
 	} else {
@@ -1151,24 +1170,24 @@ impl Gensio {
 
     /// Call gensio_control(), passing in the given string.  The result
     /// string is returned in Ok().
-    pub fn control_str(&self, depth: i32, get: bool, option: u32, val: &str)
+    pub fn control_str(&self, depth: i32, dir: ControlDir, option: ControlOp,
+		       val: &str)
 		       -> Result<String, i32> {
 	let valv = to_term_str_bytes(val);
-	match self.control_resize(depth, get, option, &valv) {
+	match self.control_resize(depth, dir, option, &valv) {
 	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
 	    Err(err) => Err(err)
 	}
     }
 
     /// Call gensio_acontrol with the given options.
-    pub fn acontrol(&self, depth: i32, get: bool, option: u32,
+    pub fn acontrol(&self, depth: i32, dir: ControlDir, option: AControlOp,
 		    data: &[u8], done: Option<Weak<dyn ControlDone>>,
 		    timeout: Option<&Duration>)
 		    -> Result<(), i32> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
-	let get = match get { false => 0, true => 1 };
 	let d = match done {
 	    Some(cb) => Box::into_raw(Box::new(ControlDoneData { cb })),
 	    None => std::ptr::null_mut()
@@ -1177,7 +1196,8 @@ impl Gensio {
 	// panic, so there is no need to worry about unwinding not
 	// recovering the Box.
 	let err = unsafe {
-	    raw::gensio_acontrol(self.g, depth, get, option,
+	    raw::gensio_acontrol(self.g, depth, control_dir_to_cbool(dir),
+				 acontrol_op_to_val(option),
 				 data.as_ptr() as *const ffi::c_void,
 				 data.len() as GensioDS,
 				 control_done, d as *mut ffi::c_void, tptr)
@@ -1195,19 +1215,19 @@ impl Gensio {
 
     /// Like acontrol, but taks a string and converts it to nil
     /// terminated bytes for the caller.
-    pub fn acontrol_str(&self, depth: i32, get: bool, option: u32,
+    pub fn acontrol_str(&self, depth: i32, dir: ControlDir, option: AControlOp,
 			data: &str, done: Option<Weak<dyn ControlDone>>,
 			timeout: Option<&Duration>)
 			-> Result<(), i32> {
 	
 	let datav = to_term_str_bytes(data);
-	self.acontrol(depth, get, option, datav.as_slice(), done, timeout)
+	self.acontrol(depth, dir, option, datav.as_slice(), done, timeout)
     }
 
     /// Call gensio_acontrol_s() with the given options.  As much data as
     /// can be held is stored in data upon return and the required
     /// size to return all data is returned in Ok().
-    pub fn acontrol_s(&self, depth: i32, get: bool, option: u32,
+    pub fn acontrol_s(&self, depth: i32, dir: ControlDir, option: AControlOp,
 		      data: &mut Vec<u8>,
 		      timeout: Option<&Duration>) -> Result<usize, i32> {
 	let err;
@@ -1223,7 +1243,9 @@ impl Gensio {
 		data.push(0);
 		len = 1;
 	    }
-	    err = raw::gensio_acontrol_s(self.g, depth, get as i32, option,
+	    err = raw::gensio_acontrol_s(self.g, depth,
+					 control_dir_to_cbool(dir),
+					 acontrol_op_to_val(option),
 					 data.as_mut_ptr() as *mut ffi::c_void,
 					 &mut len, tptr);
 	}
@@ -1238,19 +1260,19 @@ impl Gensio {
     }
 
     /// Like acontrol_s, but resize return the result in a new vector.
-    pub fn acontrol_resize_s(&self, depth: i32, get: bool, option: u32,
-			     data: &[u8],
+    pub fn acontrol_resize_s(&self, depth: i32, dir: ControlDir,
+			     option: AControlOp, data: &[u8],
 			     timeout: Option<&Duration>)
 			     -> Result<Vec<u8>, i32> {
 	let mut len: usize;
 	let mut data2 = data.to_vec();
-	len = self.acontrol_s(depth, get, option, &mut data2, timeout)?;
+	len = self.acontrol_s(depth, dir, option, &mut data2, timeout)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
 	let mut data2 = data.to_vec();
 	data2.reserve(len + 1); // Add 1 for C string terminator
-	len = self.acontrol_s(depth, get, option, &mut data2, timeout)?;
+	len = self.acontrol_s(depth, dir, option, &mut data2, timeout)?;
 	if len >= data2.capacity() {
 	    Err(GE_TOOBIG)
 	} else {
@@ -1260,11 +1282,12 @@ impl Gensio {
 
     /// Like acontrol_resize_s, but takes and returns a string that is
     /// converted to/from bytes.
-    pub fn acontrol_str_s(&self, depth: i32, get: bool, option: u32, val: &str,
-			  timeout: Option<&Duration>)
+    pub fn acontrol_str_s(&self, depth: i32, dir: ControlDir,
+			  option: AControlOp,
+			  val: &str, timeout: Option<&Duration>)
 			  -> Result<String, i32> {
 	let valv = to_term_str_bytes(val);
-	match self.acontrol_resize_s(depth, get, option, &valv, timeout) {
+	match self.acontrol_resize_s(depth, dir, option, &valv, timeout) {
 	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
 	    Err(err) => Err(err)
 	}
@@ -1272,8 +1295,8 @@ impl Gensio {
 
     /// Like acontrol_s() but this version is interruptible on Unix
     /// like systems.
-    pub fn acontrol_s_intr(&self, depth: i32, get: bool, option: u32,
-			   data: &mut Vec<u8>,
+    pub fn acontrol_s_intr(&self, depth: i32, dir: ControlDir,
+			   option: AControlOp, data: &mut Vec<u8>,
 			   timeout: Option<&Duration>) -> Result<usize, i32> {
 	let err;
 	let mut len: GensioDS;
@@ -1288,7 +1311,9 @@ impl Gensio {
 		data.push(0);
 		len = 1;
 	    }
-	    err = raw::gensio_acontrol_s_intr(self.g, depth, get as i32, option,
+	    err = raw::gensio_acontrol_s_intr(self.g, depth,
+					 control_dir_to_cbool(dir),
+					 acontrol_op_to_val(option),
 					 data.as_mut_ptr() as *mut ffi::c_void,
 					 &mut len, tptr);
 	}
@@ -1303,19 +1328,19 @@ impl Gensio {
     }
 
     /// Like acontrol_intr_s, but resize return the result in a new vector.
-    pub fn acontrol_resize_s_intr(&self, depth: i32, get: bool, option: u32,
-				  data: &[u8],
+    pub fn acontrol_resize_s_intr(&self, depth: i32, dir: ControlDir,
+				  option: AControlOp, data: &[u8],
 				  timeout: Option<&Duration>)
 				  -> Result<Vec<u8>, i32> {
 	let mut len: usize;
 	let mut data2 = data.to_vec();
-	len = self.acontrol_s_intr(depth, get, option, &mut data2, timeout)?;
+	len = self.acontrol_s_intr(depth, dir, option, &mut data2, timeout)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
 	let mut data2 = data.to_vec();
 	data2.reserve(len + 1); // Add 1 for C string terminator
-	len = self.acontrol_s_intr(depth, get, option, &mut data2, timeout)?;
+	len = self.acontrol_s_intr(depth, dir, option, &mut data2, timeout)?;
 	if len >= data2.capacity() {
 	    Err(GE_TOOBIG)
 	} else {
@@ -1325,11 +1350,12 @@ impl Gensio {
 
     /// Like acontrol_resize_s_intr, but takes and returns a string that is
     /// converted to/from bytes.
-    pub fn acontrol_str_s_intr(&self, depth: i32, get: bool, option: u32,
+    pub fn acontrol_str_s_intr(&self, depth: i32, dir: ControlDir,
+			       option: AControlOp,
 			       val: &str, timeout: Option<&Duration>)
 			       -> Result<String, i32> {
 	let valv = to_term_str_bytes(val);
-	match self.acontrol_resize_s_intr(depth, get, option, &valv,
+	match self.acontrol_resize_s_intr(depth, dir, option, &valv,
 					  timeout) {
 	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
 	    Err(err) => Err(err)
@@ -1505,9 +1531,16 @@ pub trait AccepterEvent {
 }
 
 /// See gensio_acc_control.3 for these.
-pub const GENSIO_ACC_CONTROL_LADDR: u32 = 1;
-pub const GENSIO_ACC_CONTROL_LPORT: u32 = 2;
-pub const GENSIO_ACC_CONTROL_TCPDNAME: u32 = 3;
+#[derive(Copy,Clone)]
+pub enum AccControlOp {
+    LAddr = 1,
+    LPort = 2,
+    TCPDNName = 3,
+}
+
+fn acc_control_op_to_val(op: AccControlOp) -> ffi::c_uint {
+    op as ffi::c_uint
+}
 
 struct AccepterData {
     o: osfuncs::OsFuncs, // Used to keep the os funcs alive.
@@ -1827,7 +1860,7 @@ impl Accepter {
     /// Call gensio_acc_control() with the given options.  As much
     /// data as can be held is stored in data upon return and the
     /// required size to return all data is returned in Ok().
-    pub fn control(&self, depth: i32, get: bool, option: u32,
+    pub fn control(&self, depth: i32, dir: ControlDir, option: AccControlOp,
 		   data: &mut Vec<u8>) -> Result<usize, i32> {
 	let err;
 	let mut len: GensioDS;
@@ -1839,7 +1872,9 @@ impl Accepter {
 		data.push(0);
 		len = data.capacity() as GensioDS;
 	    }
-	    err = raw::gensio_acc_control(self.a, depth, get as i32, option,
+	    err = raw::gensio_acc_control(self.a, depth,
+					  control_dir_to_cbool(dir),
+					  acc_control_op_to_val(option),
 					  data.as_mut_ptr() as *mut ffi::c_void,
 					  &mut len);
 	}
@@ -1854,17 +1889,18 @@ impl Accepter {
     }
 
     /// Call gensio_acc_control() and return a vector holding the result.
-    pub fn control_resize(&self, depth: i32, get: bool, option: u32,
+    pub fn control_resize(&self, depth: i32, dir: ControlDir,
+			  option: AccControlOp,
 			  data: &[u8]) -> Result<Vec<u8>, i32> {
 	let mut len: usize;
 	let mut data2 = data.to_vec();
-	len = self.control(depth, get, option, &mut data2)?;
+	len = self.control(depth, dir, option, &mut data2)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
 	let mut data2 = data.to_vec();
 	data2.reserve(len + 1);
-	len = self.control(depth, get, option, &mut data2)?;
+	len = self.control(depth, dir, option, &mut data2)?;
 	if len >= data2.capacity() {
 	    Err(GE_TOOBIG)
 	} else {
@@ -1874,10 +1910,11 @@ impl Accepter {
 
     /// Call gensio_acc_control(), passing in the given string.  The result
     /// string is returned in Ok().
-    pub fn control_str(&self, depth: i32, get: bool, option: u32, val: &str)
+    pub fn control_str(&self, depth: i32, dir: ControlDir, option: AccControlOp,
+		       val: &str)
 		       -> Result<String, i32> {
 	let valv = val.as_bytes().to_vec();
-	let rv = self.control_resize(depth, get, option, &valv)?;
+	let rv = self.control_resize(depth, dir, option, &valv)?;
 	Ok(String::from_utf8_lossy(&rv).to_string())
     }
 
@@ -2232,8 +2269,8 @@ mod tests {
 			     Arc::downgrade(&e1) as _)
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
-	let port = match a.control_str(0, GENSIO_CONTROL_GET,
-				       GENSIO_ACC_CONTROL_LPORT, "") {
+	let port = match a.control_str(0, ControlDir::Get,
+				       AccControlOp::LPort, "") {
 	    Ok(s) => s,
 	    Err(err) => panic!("Error getting acc laddr {err}")
 	};
@@ -2265,8 +2302,8 @@ mod tests {
 	let a = new_accepter("tcp,127.0.0.1,0", &o, e1w.clone())
 	    .expect("Couldn't allocate accepter");
 	a.startup().expect("Couldn't start accepter");
-	let port = match a.control_str(0, GENSIO_CONTROL_GET,
-				       GENSIO_ACC_CONTROL_LPORT, "") {
+	let port = match a.control_str(0, ControlDir::Get,
+				       AccControlOp::LPort, "") {
 	    Ok(s) => s,
 	    Err(err) => panic!("Error getting acc laddr {err}")
 	};
@@ -2418,9 +2455,9 @@ mod tests {
 		}
 	    }
 	    let baud = baud.to_string();
-	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
-				    GENSIO_CONTROL_SET,
-				    GENSIO_ACONTROL_SER_BAUD,
+	    _ = self.g.acontrol_str(CONTROL_DEPTH_FIRST,
+				    ControlDir::Set,
+				    AControlOp::SerBaud,
 				    &baud.to_string(), None, None);
         }
 
@@ -2434,9 +2471,9 @@ mod tests {
 		    val = d.datasize;
 		}
 	    }
-	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
-				    GENSIO_CONTROL_SET,
-				    GENSIO_ACONTROL_SER_DATASIZE,
+	    _ = self.g.acontrol_str(CONTROL_DEPTH_FIRST,
+				    ControlDir::Set,
+				    AControlOp::SerDatasize,
 				    &val.to_string(), None, None);
         }
 
@@ -2451,9 +2488,9 @@ mod tests {
 		}
 	    }
 	    let val = val.to_string();
-	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
-				    GENSIO_CONTROL_SET,
-				    GENSIO_ACONTROL_SER_STOPBITS,
+	    _ = self.g.acontrol_str(CONTROL_DEPTH_FIRST,
+				    ControlDir::Set,
+				    AControlOp::SerStopbits,
 				    &val.to_string(), None, None);
         }
 
@@ -2468,9 +2505,9 @@ mod tests {
 		}
 	    }
 	    let val = parity_to_str(val);
-	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
-				    GENSIO_CONTROL_SET,
-				    GENSIO_ACONTROL_SER_PARITY,
+	    _ = self.g.acontrol_str(CONTROL_DEPTH_FIRST,
+				    ControlDir::Set,
+				    AControlOp::SerParity,
 				    &val.to_string(), None, None);
         }
 
@@ -2485,9 +2522,9 @@ mod tests {
 		}
 	    }
 	    let val = flowcontrol_to_str(val);
-	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
-				    GENSIO_CONTROL_SET,
-				    GENSIO_ACONTROL_SER_FLOWCONTROL,
+	    _ = self.g.acontrol_str(CONTROL_DEPTH_FIRST,
+				    ControlDir::Set,
+				    AControlOp::SerFlowcontrol,
 				    &val.to_string(), None, None);
         }
 
@@ -2502,9 +2539,9 @@ mod tests {
 		}
 	    }
 	    let val = flowcontrol_to_str(val);
-	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
-				    GENSIO_CONTROL_SET,
-				    GENSIO_ACONTROL_SER_IFLOWCONTROL,
+	    _ = self.g.acontrol_str(CONTROL_DEPTH_FIRST,
+				    ControlDir::Set,
+				    AControlOp::SerIFlowcontrol,
 				    &val.to_string(), None, None);
         }
 
@@ -2519,9 +2556,9 @@ mod tests {
 		}
 	    }
 	    let val = onoff_to_str(val);
-	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
-				    GENSIO_CONTROL_SET,
-				    GENSIO_ACONTROL_SER_SBREAK,
+	    _ = self.g.acontrol_str(CONTROL_DEPTH_FIRST,
+				    ControlDir::Set,
+				    AControlOp::SerSBreak,
 				    &val.to_string(), None, None);
         }
 
@@ -2536,9 +2573,9 @@ mod tests {
 		}
 	    }
 	    let val = onoff_to_str(val);
-	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
-				    GENSIO_CONTROL_SET,
-				    GENSIO_ACONTROL_SER_DTR,
+	    _ = self.g.acontrol_str(CONTROL_DEPTH_FIRST,
+				    ControlDir::Set,
+				    AControlOp::SerDtr,
 				    &val.to_string(), None, None);
         }
 
@@ -2553,18 +2590,18 @@ mod tests {
 		}
 	    }
 	    let val = onoff_to_str(val);
-	    _ = self.g.acontrol_str(GENSIO_CONTROL_DEPTH_FIRST,
-				    GENSIO_CONTROL_SET,
-				    GENSIO_ACONTROL_SER_RTS,
+	    _ = self.g.acontrol_str(CONTROL_DEPTH_FIRST,
+				    ControlDir::Set,
+				    AControlOp::SerRts,
 				    &val.to_string(), None, None);
         }
 
         fn signature(&self, _val: &[u8]) {
 	    let d = self.d.lock().unwrap();
 	    // Signature value cannot be changed.
-	    _ = self.g.acontrol(GENSIO_CONTROL_DEPTH_FIRST,
-				GENSIO_CONTROL_SET,
-				GENSIO_ACONTROL_SER_SIGNATURE,
+	    _ = self.g.acontrol(CONTROL_DEPTH_FIRST,
+				ControlDir::Set,
+				AControlOp::SerSignature,
 				d.signature.as_slice(),
 				None, None);
         }
@@ -2615,8 +2652,8 @@ mod tests {
         let a = new_accepter("telnet(rfc2217),tcp,localhost,0", o,
 			     Arc::downgrade(&h) as _)?;
         a.startup()?;
-	let port = a.control_str(GENSIO_CONTROL_DEPTH_FIRST, GENSIO_CONTROL_GET,
-				 GENSIO_ACC_CONTROL_LPORT, "")?;
+	let port = a.control_str(CONTROL_DEPTH_FIRST, ControlDir::Get,
+				 AccControlOp::LPort, "")?;
 	let list = TelnetReflectorInstList {  list: Mutex::new(Vec::new()) };
 	let refl = Arc::new(TelnetReflector { a: Arc::new(a), port: port,
 					      list: Arc::new(list) });
@@ -2668,11 +2705,11 @@ mod tests {
     // match osval, then set the value to sval and validate that it
     // matches.
     fn test_acontrol(e: &Arc<SerialEvInst>, g: &Gensio,
-		     name: &str, osval: &str, sval: &str, option: u32)
+		     name: &str, osval: &str, sval: &str, option: AControlOp)
     {
 	let mut v = Vec::with_capacity(16);
 	v.extend(to_term_str_bytes("0").as_slice());
-	g.acontrol_s(0, GENSIO_CONTROL_GET, option,
+	g.acontrol_s(0, ControlDir::Get, option,
 		     &mut v, None)
 	    .expect(&format!("Acontrol get {name} failed"));
 	assert_eq!(v.as_slice(), osval.as_bytes());
@@ -2681,7 +2718,7 @@ mod tests {
 	    let mut v = e.expect_val.lock().unwrap();
 	    *v = Some(sval.to_string());
 	}
-	g.acontrol_str(0, GENSIO_CONTROL_SET, option, sval,
+	g.acontrol_str(0, ControlDir::Set, option, sval,
 		       Some(Arc::downgrade(&e) as _), None)
 	    .expect("Acontrol failed");
 	e.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
@@ -2708,25 +2745,25 @@ mod tests {
 	g.read_enable(true);
 
 	test_acontrol(&e, &g, "baud", "9600", "19200",
-		      GENSIO_ACONTROL_SER_BAUD);
+		      AControlOp::SerBaud);
 	test_acontrol(&e, &g, "datasize", "8", "7",
-		      GENSIO_ACONTROL_SER_DATASIZE);
+		      AControlOp::SerDatasize);
 	test_acontrol(&e, &g, "stopbits", "1", "2",
-		      GENSIO_ACONTROL_SER_STOPBITS);
+		      AControlOp::SerStopbits);
 	test_acontrol(&e, &g, "parity", "none", "odd",
-		      GENSIO_ACONTROL_SER_PARITY);
+		      AControlOp::SerParity);
 	test_acontrol(&e, &g, "flowcontrol", "none", "xonxoff",
-		      GENSIO_ACONTROL_SER_FLOWCONTROL);
+		      AControlOp::SerFlowcontrol);
 	test_acontrol(&e, &g, "iflowcontrol", "none", "dtr",
-		      GENSIO_ACONTROL_SER_IFLOWCONTROL);
+		      AControlOp::SerIFlowcontrol);
 	test_acontrol(&e, &g, "sbreak", "off", "on",
-		      GENSIO_ACONTROL_SER_SBREAK);
+		      AControlOp::SerSBreak);
 	test_acontrol(&e, &g, "dtr", "off", "on",
-		      GENSIO_ACONTROL_SER_DTR);
+		      AControlOp::SerDtr);
 	test_acontrol(&e, &g, "rts", "off", "on",
-		      GENSIO_ACONTROL_SER_RTS);
+		      AControlOp::SerRts);
 	test_acontrol(&e, &g, "signature", "mysig", "mysig",
-		      GENSIO_ACONTROL_SER_SIGNATURE);
+		      AControlOp::SerSignature);
 
 	g.close_s().expect("Close failed");
     }

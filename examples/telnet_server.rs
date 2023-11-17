@@ -104,9 +104,9 @@ impl gensio::Event for TelnetReflectorInst {
 	}
 	let baud = baud.to_string();
 	println!("Baud set to {}", baud);
-	_ = self.g.acontrol_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-				gensio::GENSIO_CONTROL_SET,
-				gensio::GENSIO_ACONTROL_SER_BAUD,
+	_ = self.g.acontrol_str(gensio::CONTROL_DEPTH_FIRST,
+				gensio::ControlDir::Set,
+				gensio::AControlOp::SerBaud,
 				&baud.to_string(), None, None);
     }
 
@@ -121,9 +121,9 @@ impl gensio::Event for TelnetReflectorInst {
 	    }
 	}
 	println!("Datasize set to {}", val);
-	_ = self.g.acontrol_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-				gensio::GENSIO_CONTROL_SET,
-				gensio::GENSIO_ACONTROL_SER_DATASIZE,
+	_ = self.g.acontrol_str(gensio::CONTROL_DEPTH_FIRST,
+				gensio::ControlDir::Set,
+				gensio::AControlOp::SerDatasize,
 				&val.to_string(), None, None);
     }
 
@@ -138,9 +138,9 @@ impl gensio::Event for TelnetReflectorInst {
 	    }
 	}
 	println!("Stopbits set to {}", val);
-	_ = self.g.acontrol_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-				gensio::GENSIO_CONTROL_SET,
-				gensio::GENSIO_ACONTROL_SER_STOPBITS,
+	_ = self.g.acontrol_str(gensio::CONTROL_DEPTH_FIRST,
+				gensio::ControlDir::Set,
+				gensio::AControlOp::SerStopbits,
 				&val.to_string(), None, None);
     }
 
@@ -156,9 +156,9 @@ impl gensio::Event for TelnetReflectorInst {
 	}
 	let val = gensio::parity_to_str(val);
 	println!("Parity set to {}", val);
-	_ = self.g.acontrol_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-				gensio::GENSIO_CONTROL_SET,
-				gensio::GENSIO_ACONTROL_SER_PARITY,
+	_ = self.g.acontrol_str(gensio::CONTROL_DEPTH_FIRST,
+				gensio::ControlDir::Set,
+				gensio::AControlOp::SerParity,
 				&val.to_string(), None, None);
     }
 
@@ -174,9 +174,9 @@ impl gensio::Event for TelnetReflectorInst {
 	}
 	let val = gensio::flowcontrol_to_str(val);
 	println!("Flowcontrol set to {}", val);
-	_ = self.g.acontrol_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-				gensio::GENSIO_CONTROL_SET,
-				gensio::GENSIO_ACONTROL_SER_FLOWCONTROL,
+	_ = self.g.acontrol_str(gensio::CONTROL_DEPTH_FIRST,
+				gensio::ControlDir::Set,
+				gensio::AControlOp::SerFlowcontrol,
 				&val.to_string(), None, None);
     }
 
@@ -192,9 +192,9 @@ impl gensio::Event for TelnetReflectorInst {
 	}
 	let val = gensio::flowcontrol_to_str(val);
 	println!("IFlowcontrol set to {}", val);
-	_ = self.g.acontrol_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-				gensio::GENSIO_CONTROL_SET,
-				gensio::GENSIO_ACONTROL_SER_IFLOWCONTROL,
+	_ = self.g.acontrol_str(gensio::CONTROL_DEPTH_FIRST,
+				gensio::ControlDir::Set,
+				gensio::AControlOp::SerIFlowcontrol,
 				&val.to_string(), None, None);
     }
 
@@ -210,9 +210,9 @@ impl gensio::Event for TelnetReflectorInst {
 	}
 	let val = gensio::onoff_to_str(val);
 	println!("Break set to {}", val);
-	_ = self.g.acontrol_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-				gensio::GENSIO_CONTROL_SET,
-				gensio::GENSIO_ACONTROL_SER_SBREAK,
+	_ = self.g.acontrol_str(gensio::CONTROL_DEPTH_FIRST,
+				gensio::ControlDir::Set,
+				gensio::AControlOp::SerSBreak,
 				&val.to_string(), None, None);
     }
 
@@ -228,9 +228,9 @@ impl gensio::Event for TelnetReflectorInst {
 	}
 	let val = gensio::onoff_to_str(val);
 	println!("DTR set to {}", val);
-	_ = self.g.acontrol_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-				gensio::GENSIO_CONTROL_SET,
-				gensio::GENSIO_ACONTROL_SER_DTR,
+	_ = self.g.acontrol_str(gensio::CONTROL_DEPTH_FIRST,
+				gensio::ControlDir::Set,
+				gensio::AControlOp::SerDtr,
 				&val.to_string(), None, None);
     }
 
@@ -246,9 +246,9 @@ impl gensio::Event for TelnetReflectorInst {
 	}
 	let val = gensio::onoff_to_str(val);
 	println!("RTS set to {}", val);
-	_ = self.g.acontrol_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-				gensio::GENSIO_CONTROL_SET,
-				gensio::GENSIO_ACONTROL_SER_RTS,
+	_ = self.g.acontrol_str(gensio::CONTROL_DEPTH_FIRST,
+				gensio::ControlDir::Set,
+				gensio::AControlOp::SerRts,
 				&val.to_string(), None, None);
     }
 
@@ -257,9 +257,9 @@ impl gensio::Event for TelnetReflectorInst {
 	// Signature value cannot be changed.
 	println!("Signature request for {}",
 		 String::from_utf8_lossy(&d.signature));
-	_ = self.g.acontrol(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-			    gensio::GENSIO_CONTROL_SET,
-			    gensio::GENSIO_ACONTROL_SER_SIGNATURE,
+	_ = self.g.acontrol(gensio::CONTROL_DEPTH_FIRST,
+			    gensio::ControlDir::Set,
+			    gensio::AControlOp::SerSignature,
 			    d.signature.as_slice(),
 			    None, None);
     }
@@ -313,9 +313,9 @@ fn new_telnet_reflector(o: &osfuncs::OsFuncs, port: &str)
     // accepter before then.
     let a = gensio::new_accepter(&astr, o, Arc::downgrade(&ae) as _)?;
     a.startup()?;
-    let port = a.control_str(gensio::GENSIO_CONTROL_DEPTH_FIRST,
-			     gensio::GENSIO_CONTROL_GET,
-			     gensio::GENSIO_ACC_CONTROL_LPORT, "")?;
+    let port = a.control_str(gensio::CONTROL_DEPTH_FIRST,
+			     gensio::ControlDir::Get,
+			     gensio::AccControlOp::LPort, "")?;
     let list = TelnetReflectorInstList { list: Mutex::new(Vec::new()) };
     let refl = Arc::new(TelnetReflector {
 	a: Arc::new(a), port, list: Arc::new(list),
