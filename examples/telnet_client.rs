@@ -10,6 +10,7 @@
 use std::env;
 use std::sync::Arc;
 use gensio;
+use gensio::Error;
 use gensio::osfuncs;
 
 // An event handler, data received on io is written to otherio.
@@ -28,35 +29,34 @@ impl ClientEvent {
 }
 
 impl gensio::Event for ClientEvent {
-    fn err(&self, err: i32) -> i32 {
-	println!("Error from gensio: {}", gensio::err_to_str(err));
+    fn err(&self, err: Error) -> Error {
+	println!("Error from gensio: {}", err);
 	self.shutdown();
-        0
+        Error::NoErr
     }
 
     fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
-            -> (i32, usize) {
+            -> (Error, usize) {
 	match self.otherio.write(buf, None) {
 	    Ok(len) => {
 		if (len as usize) < buf.len() {
 		    self.io.read_enable(false);
 		    self.otherio.write_enable(true);
 		}
-		(0, (len as u64).try_into().unwrap())
+		(Error::NoErr, (len as u64).try_into().unwrap())
 	    }
 	    Err(err) => {
 		self.shutdown();
-		println!("Error writing to gensio: {}",
-			 gensio::err_to_str(err));
+		println!("Error writing to gensio: {}", err);
 		(err, 0)
 	    }
 	}
     }
 
-    fn write_ready(&self) -> i32 {
+    fn write_ready(&self) -> Error {
         self.io.write_enable(false);
         self.otherio.read_enable(true);
-        0
+        Error::NoErr
     }
 }
 
@@ -68,17 +68,17 @@ impl gensio::Event for StartupEvent {
 	println!("Parameter error: {}", s);
     }
 
-    fn err(&self, _err: i32) -> i32 {
-	gensio::GE_NOTSUP
+    fn err(&self, _err: Error) -> Error {
+	gensio::Error::NotSup
     }
 
     fn read(&self, _buf: &[u8], _auxdata: Option<&[&str]>)
-            -> (i32, usize) {
-	(gensio::GE_NOTSUP, 0)
+            -> (Error, usize) {
+	(gensio::Error::NotSup, 0)
     }
 
-    fn write_ready(&self) -> i32 {
-	gensio::GE_NOTSUP
+    fn write_ready(&self) -> Error {
+	gensio::Error::NotSup
     }
 }
 

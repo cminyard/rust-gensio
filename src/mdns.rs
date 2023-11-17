@@ -10,6 +10,8 @@ use crate::osfuncs;
 use crate::addr;
 pub mod raw;
 use std::panic;
+use crate::Error;
+use crate::val_to_error;
 
 pub struct MDNS {
     o: osfuncs::OsFuncs,
@@ -65,23 +67,23 @@ pub struct MDNSSpec {
 }
 
 fn optstr_to_cstr(s: &Option<String>)
-		  -> Result<(*const ffi::c_char, Option<CString>), i32> {
+		  -> Result<(*const ffi::c_char, Option<CString>), Error> {
     match s {
 	None => Ok((std::ptr::null(), None)),
 	Some(s) => {
 	    match ffi::CString::new(s.as_str()) {
 		Ok(s) => Ok((s.as_ptr(), Some(s))),
-		Err(_) => Err(crate::GE_INVAL)
+		Err(_) => Err(crate::Error::Inval)
 	    }
 	}
     }
 }
 
 impl MDNS {
-    pub fn shutdown(&self, cb: Weak<dyn MDNSDone>) -> Result<(), i32> {
+    pub fn shutdown(&self, cb: Weak<dyn MDNSDone>) -> Result<(), Error> {
 	let mut closed = self.closed.lock().unwrap();
 	if *closed {
-	    return Err(crate::GE_NOTREADY);
+	    return Err(crate::Error::NotReady);
 	}
 	*closed = true;
 
@@ -93,7 +95,7 @@ impl MDNS {
 						 d as *mut ffi::c_void) };
 	if err != 0 {
 	    unsafe { drop(Box::from_raw(d)); }
-	    return Err(err);
+	    return Err(val_to_error(err));
 	}
 	Ok(())
     }
@@ -101,10 +103,10 @@ impl MDNS {
     pub fn new_service(&self, spec: &MDNSSpec,
 		       port: i32, txt: Option<&[&str]>,
 		       cb: Weak<dyn ServiceEvent>)
-		       -> Result<Service, i32> {
+		       -> Result<Service, Error> {
 	let closed = self.closed.lock().unwrap();
 	if *closed {
-	    return Err(crate::GE_NOTREADY);
+	    return Err(crate::Error::NotReady);
 	}
 
 	let sd = Box::new(ServiceData { _o: self.o.clone(), cb });
@@ -135,16 +137,16 @@ impl MDNS {
 	};
 	if err != 0 {
 	    unsafe { drop(Box::from_raw(sd)) };
-	    return Err(err);
+	    return Err(val_to_error(err));
 	}
 	Ok(Service { s, _d: sd })
     }
 
     pub fn new_watch(&self, spec: &MDNSSpec, cb: Weak<dyn WatchEvent>)
-		     -> Result<Watch, i32> {
+		     -> Result<Watch, Error> {
 	let closed = self.closed.lock().unwrap();
 	if *closed {
-	    return Err(crate::GE_NOTREADY);
+	    return Err(crate::Error::NotReady);
 	}
 
 	let wd = Box::new(WatchData {
@@ -170,7 +172,7 @@ impl MDNS {
 	};
 	if err != 0 {
 	    unsafe { drop(Box::from_raw(wd)) };
-	    return Err(err);
+	    return Err(val_to_error(err));
 	}
 	Ok(Watch { w, d: wd })
     }
@@ -242,11 +244,11 @@ extern "C" fn service_event(s: *const raw::gensio_mdns_service,
 }
 
 impl Service {
-    pub fn shutdown(&self) -> Result<(), i32> {
+    pub fn shutdown(&self) -> Result<(), Error> {
 	let err = unsafe { raw::gensio_mdns_remove_service(self.s) };
 	match err {
 	    0 => Ok(()),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 }
@@ -400,7 +402,7 @@ extern "C" fn watch_event(w: *const raw::gensio_mdns_watch,
 
 impl Watch {
     fn i_shutdown(&self, cb: Option<Weak<dyn WatchDone>>)
-		  -> Result<(), i32> {
+		  -> Result<(), Error> {
 	let d = Box::new(WatchDoneData { cb, d: self.d });
 	let d = Box::into_raw(d);
 	// Nothing below here can panic, so it's safe to convert the
@@ -409,22 +411,22 @@ impl Watch {
 	    self.w, watch_done, d as *mut ffi::c_void) };
 	if err != 0 {
 	    unsafe { drop(Box::from_raw(d)); }
-	    return Err(err);
+	    return Err(val_to_error(err));
 	}
 	Ok(())
     }
 
     pub fn shutdown(&self, done: Option<Weak<dyn WatchDone>>)
-		    -> Result<(), i32> {
+		    -> Result<(), Error> {
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
 	match *state {
 	    CloseState::Open => (),
-	    _ => return Err(crate::GE_INUSE)
+	    _ => return Err(crate::Error::InUse)
 	}
 	*state = CloseState::InClose;
 
 	let rv = self.i_shutdown(done);
-	if rv == Ok(()) {
+	if rv.is_ok() {
 	    *state = CloseState::InClose;
 	}
 	rv

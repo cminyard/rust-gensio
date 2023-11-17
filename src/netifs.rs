@@ -11,6 +11,8 @@
 use std::ffi;
 use std::slice;
 use crate::osfuncs;
+use crate::Error;
+use crate::val_to_error;
 
 mod raw;
 
@@ -30,7 +32,7 @@ pub struct NetIfs {
 
 /// Allocate a new NetIfs structure and fill it in with the network
 /// interfaces.
-pub fn new(o: &osfuncs::OsFuncs) -> Result<NetIfs, i32> {
+pub fn new(o: &osfuncs::OsFuncs) -> Result<NetIfs, Error> {
     let ni: *const *const raw::gensio_net_if = std::ptr::null();
     let mut len: ffi::c_uint = 0;
     let rv = unsafe {
@@ -38,15 +40,15 @@ pub fn new(o: &osfuncs::OsFuncs) -> Result<NetIfs, i32> {
     };
     match rv {
 	0 => (),
-	_ => return Err(rv)
+	_ => return Err(val_to_error(rv))
     }
     Ok(NetIfs { o: o.clone(), ni, len })
 }
 
 impl NetIfs {
-    fn get_ni(&self, idx: usize) -> Result<*const raw::gensio_net_if, i32> {
+    fn get_ni(&self, idx: usize) -> Result<*const raw::gensio_net_if, Error> {
 	if idx >= self.len as usize {
-	    return Err(crate::GE_OUTOFRANGE);
+	    return Err(Error::OutOfRange);
 	}
 	let nis = unsafe { slice::from_raw_parts(self.ni, self.len as usize) };
 	Ok(nis[idx])
@@ -63,47 +65,47 @@ impl NetIfs {
     }
 
     /// Get the OS name for the network interface.
-    pub fn get_name(&self, idx: usize) -> Result<String, i32> {
+    pub fn get_name(&self, idx: usize) -> Result<String, Error> {
 	let ni = self.get_ni(idx)?;
 	let cs = unsafe { ffi::CStr::from_ptr((*ni).name) };
 	Ok(String::from_utf8_lossy(cs.to_bytes()).to_string())
     }
 
     /// Is the network interface operational?
-    pub fn is_up(&self, idx: usize) -> Result<bool, i32> {
+    pub fn is_up(&self, idx: usize) -> Result<bool, Error> {
 	let ni = self.get_ni(idx)?;
 	Ok(unsafe { (*ni).flags } & GENSIO_NET_IF_UP != 0)
     }
 
     /// Is the network interface a loopback?
-    pub fn is_loopback(&self, idx: usize) -> Result<bool, i32> {
+    pub fn is_loopback(&self, idx: usize) -> Result<bool, Error> {
 	let ni = self.get_ni(idx)?;
 	Ok(unsafe { (*ni).flags } & GENSIO_NET_IF_LOOPBACK != 0)
     }
 
     /// Does the network interface support multicast?
-    pub fn is_multicast(&self, idx: usize) -> Result<bool, i32> {
+    pub fn is_multicast(&self, idx: usize) -> Result<bool, Error> {
 	let ni = self.get_ni(idx)?;
 	Ok(unsafe { (*ni).flags } & GENSIO_NET_IF_MULTICAST != 0)
     }
 
     /// Get the network interface number on the system.
-    pub fn get_ifindex(&self, idx: usize) -> Result<usize, i32> {
+    pub fn get_ifindex(&self, idx: usize) -> Result<usize, Error> {
 	let ni = self.get_ni(idx)?;
 	Ok(unsafe { (*ni).ifindex } as usize )
     }
 
     /// Get the number of addresses in the given network interface.
-    pub fn get_num_addrs(&self, idx: usize) -> Result<usize, i32> {
+    pub fn get_num_addrs(&self, idx: usize) -> Result<usize, Error> {
 	let ni = self.get_ni(idx)?;
 	Ok(unsafe { (*ni).naddrs } as usize )
     }
 
     fn get_addr(&self, idx: usize, aidx: usize)
-		-> Result<&raw::gensio_net_addr, i32> {
+		-> Result<&raw::gensio_net_addr, Error> {
 	let ni = self.get_ni(idx)?;
 	if aidx >= unsafe { (*ni).naddrs } as usize {
-	    return Err(crate::GE_OUTOFRANGE);
+	    return Err(crate::Error::OutOfRange);
 	}
 	let addrs = unsafe {
 	    slice::from_raw_parts((*ni).addrs, (*ni).naddrs as usize)
@@ -113,12 +115,13 @@ impl NetIfs {
 
     /// Return the number of network bits in the address prefix.
     pub fn get_addr_netbits(&self, idx: usize, aidx: usize)
-			    -> Result<u32, i32> {
+			    -> Result<u32, Error> {
 	let addr = self.get_addr(idx, aidx)?;
 	Ok(addr.netbits as u32)
     }
     /// Return an address string for the network interface.
-    pub fn get_addr_str(&self, idx: usize, aidx: usize) -> Result<String, i32> {
+    pub fn get_addr_str(&self, idx: usize, aidx: usize)
+			-> Result<String, Error> {
 	let addr = self.get_addr(idx, aidx)?;
 	let cs = unsafe { ffi::CStr::from_ptr(addr.addrstr) };
 	Ok(String::from_utf8_lossy(cs.to_bytes()).to_string())

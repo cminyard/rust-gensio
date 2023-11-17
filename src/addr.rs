@@ -11,6 +11,8 @@ use std::ffi;
 use std::ffi::CString;
 use crate::GensioDS;
 use crate::osfuncs;
+use crate::Error;
+use crate::val_to_error;
 
 pub mod raw;
 
@@ -34,10 +36,10 @@ pub const GENSIO_NETTYPE_AX25: i32 = 4;
 ///
 /// Create a new address from a raw gensio address.  This is mostly for
 /// internal use, the ai value must be valid.
-pub unsafe fn new(ai: *const raw::gensio_addr) -> Result<Addr, i32> {
+pub unsafe fn new(ai: *const raw::gensio_addr) -> Result<Addr, Error> {
     let naddr = unsafe { raw::gensio_addr_dup(ai) };
     if ai.is_null() {
-	return Err(crate::GE_NOMEM);
+	return Err(crate::Error::NoMem);
     }
     Ok(Addr { ai: naddr })
 }
@@ -46,7 +48,7 @@ pub unsafe fn new(ai: *const raw::gensio_addr) -> Result<Addr, i32> {
 /// address info, either the ipv4 address, ipv6 address, or the unix
 /// path.  Doesn't work for AX25.
 pub fn from_bytes(o: &osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
-		  -> Result<Addr, i32> {
+		  -> Result<Addr, Error> {
     let ai: *const raw::gensio_addr = std::ptr::null();
     let rv = unsafe {
 	raw::gensio_addr_create(o.raw(), nettype as ffi::c_int,
@@ -55,18 +57,18 @@ pub fn from_bytes(o: &osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
 				port as ffi::c_uint, &ai)
     };
     if rv != 0 {
-	return Err(rv);
+	return Err(val_to_error(rv));
     }
     Ok(Addr { ai })
 }
 
 /// Create an address from an address string.  Doesn't work for AX25.
 pub fn from_str(o: &osfuncs::OsFuncs, s: &str, protocol: i32, listen: bool)
-		-> Result<Addr, i32> {
+		-> Result<Addr, Error> {
     let ai: *const raw::gensio_addr = std::ptr::null();
     let cstr = match CString::new(s) {
 	Ok(s) => s,
-	Err(_) => return Err(crate::GE_INVAL)
+	Err(_) => return Err(crate::Error::Inval)
     };
     let listeni = match listen { true => 1, false => 0 };
     let rv = unsafe {
@@ -77,7 +79,7 @@ pub fn from_str(o: &osfuncs::OsFuncs, s: &str, protocol: i32, listen: bool)
 				    &ai)
     };
     if rv != 0 {
-	return Err(rv);
+	return Err(val_to_error(rv));
     }
     Ok(Addr { ai })
 }

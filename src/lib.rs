@@ -10,6 +10,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::ffi;
+use std::fmt;
 use std::sync::Arc;
 use std::sync::Weak;
 use std::sync::Mutex;
@@ -23,55 +24,80 @@ pub mod mdns;
 pub mod netifs;
 
 /// gensio error values.  See gensio_err.3
-pub const GE_NOERR:			i32 = 0;
-pub const GE_NOMEM:			i32 = 1;
-pub const GE_NOTSUP:			i32 = 2;
-pub const GE_INVAL:			i32 = 3;
-pub const GE_NOTFOUND:			i32 = 4;
-pub const GE_EXISTS:			i32 = 5;
-pub const GE_OUTOFRANGE:		i32 = 6;
-pub const GE_INCONSISTENT:		i32 = 7;
-pub const GE_NODATA:			i32 = 8;
-pub const GE_OSERR:			i32 = 9;
-pub const GE_INUSE:			i32 = 10;
-pub const GE_INPROGRESS:		i32 = 11;
-pub const GE_NOTREADY:			i32 = 12;
-pub const GE_TOOBIG:			i32 = 13;
-pub const GE_TIMEDOUT:			i32 = 14;
-pub const GE_RETRY:			i32 = 15;
-pub const GE_KEYNOTFOUND:		i32 = 17;
-pub const GE_CERTREVOKED:		i32 = 18;
-pub const GE_CERTEXPIRED:		i32 = 19;
-pub const GE_KEYINVALID:		i32 = 20;
-pub const GE_NOCERT:			i32 = 21;
-pub const GE_CERTINVALID:		i32 = 22;
-pub const GE_PROTOERR:			i32 = 23;
-pub const GE_COMMERR:			i32 = 24;
-pub const GE_IOERR:			i32 = 25;
-pub const GE_REMCLOSE:			i32 = 26;
-pub const GE_HOSTDOWN:			i32 = 27;
-pub const GE_CONNREFUSE:		i32 = 28;
-pub const GE_DATAMISSING:		i32 = 29;
-pub const GE_CERTNOTFOUND:		i32 = 30;
-pub const GE_AUTHREJECT:		i32 = 31;
-pub const GE_ADDRINUSE:			i32 = 32;
-pub const GE_INTERRUPTED:		i32 = 33;
-pub const GE_SHUTDOWN:			i32 = 34;
-pub const GE_LOCALCLOSED:		i32 = 35;
-pub const GE_PERM:			i32 = 36;
-pub const GE_APPERR:			i32 = 37;
-pub const GE_UNKNOWN_NAME_ERROR:	i32 = 38;
-pub const GE_NAME_ERROR:		i32 = 39;
-pub const GE_NAME_SERVER_FAILURE:	i32 = 40;
-pub const GE_NAME_INVALID:		i32 = 41;
-pub const GE_NAME_NET_NOT_UP:		i32 = 42;
+#[repr(i32)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum Error {
+    NoErr		= 0,
+    NoMem		= 1,
+    NotSup		= 2,
+    Inval		= 3,
+    NotFound		= 4,
+    Exists		= 5,
+    OutOfRange		= 6,
+    Inconsistent	= 7,
+    NoData		= 8,
+    OsErr		= 9,
+    InUse		= 10,
+    InProgress		= 11,
+    NotReady		= 12,
+    TooBig		= 13,
+    TimedOut		= 14,
+    Retry		= 15,
+    KeyNotFound		= 17,
+    CertRevoked		= 18,
+    CertExpired		= 19,
+    KeyInvalid		= 20,
+    NoCert		= 21,
+    CertInvalid		= 22,
+    ProtoErr		= 23,
+    CommErr		= 24,
+    IOErr		= 25,
+    RemClose		= 26,
+    HostDown		= 27,
+    ConnRefuse		= 28,
+    DataMissing		= 29,
+    CertNotFound	= 30,
+    AuthReject		= 31,
+    AddrInUse		= 32,
+    Interrupted		= 33,
+    Shutdown		= 34,
+    LocalClosed		= 35,
+    Perm		= 36,
+    AppErr		= 37,
+    UnknownNameErr	= 38,
+    NameErr		= 39,
+    NameServerFailure	= 40,
+    NameInvalid		= 41,
+    NameNetNotUp	= 42,
+}
+const MAX_ERR_VAL:i32 = 42;
+
+fn val_to_error(val: ffi::c_int) -> Error {
+    if val < 0 || val > MAX_ERR_VAL {
+	Error::Inval
+    } else {
+	unsafe { std::mem::transmute(val) }
+    }
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+	write!(f, "gensio error: {}", err_to_str(*self))
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+	write!(f, "gensio error: {}", err_to_str(*self))
+    }
+}
 
 /// Values for the first parameter of control functions.
 pub const CONTROL_DEPTH_ALL: i32 =	-1;
 pub const CONTROL_DEPTH_FIRST: i32 =	-2;
 
 /// Values for the second parameter of control functions.
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ControlDir { Get, Set, }
 
 fn control_dir_to_cbool(dir: ControlDir) -> ffi::c_int {
@@ -79,7 +105,7 @@ fn control_dir_to_cbool(dir: ControlDir) -> ffi::c_int {
 }
 
 /// Values for the third parameter of control functions.  See gensio_control.3
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ControlOp {
     NoDelay		= 1,
     Streams		= 2,
@@ -137,7 +163,7 @@ fn control_op_to_val(op: ControlOp) -> ffi::c_uint {
 }
 
 /// Values for the third parameter of acontrol() and friends
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum AControlOp {
     SerBaud		= 1000,
     SerDatasize		= 1001,
@@ -167,7 +193,7 @@ pub trait OpDoneErr {
     /// Report an error on the operation.  Unlike most other gensio
     /// interfaces, which pass the error in the done() method, the
     /// error report is done separately here.
-    fn done_err(&self, err: i32);
+    fn done_err(&self, err: Error);
 
     /// Report that the operation (open) has completed.
     fn done(&self);
@@ -184,7 +210,7 @@ pub trait ControlDone {
     /// Report an error on the operation.  Unlike most other gensio
     /// interfaces, which pass the error in the done() method, the
     /// error report is done separately here.
-    fn done_err(&self, err: i32);
+    fn done_err(&self, err: Error);
 
     /// Report that the operation (Acontrol) has completed.
     fn done(&self, buf: &[u8]);
@@ -213,7 +239,7 @@ fn i_control_done(_io: *const raw::gensio,
     };
     match err {
 	0 => cb.done(data),
-	_ => cb.done_err(err)
+	_ => cb.done_err(val_to_error(err))
     }
 }
 
@@ -238,7 +264,7 @@ fn i_op_done_err(_io: *const raw::gensio, err: ffi::c_int,
     };
     match err {
 	0 => cb.done(),
-	_ => cb.done_err(err)
+	_ => cb.done_err(val_to_error(err))
     }
 }
 
@@ -317,52 +343,52 @@ pub trait Event {
     /// Report a read error.  Unlike most other gensio interfaces,
     /// which combine the error with the read() method, the error
     /// report is done separately here.
-    fn err(&self, err: i32) -> i32;
+    fn err(&self, err: Error) -> Error;
 
     /// Report some received data.  The i32 return (first value in
     /// tuble) return is the error return, normally 0, and the u64
     /// (second value) is the number of bytes consumed.
-    fn read(&self, buf: &[u8], auxdata: Option<&[&str]>) -> (i32, usize);
+    fn read(&self, buf: &[u8], auxdata: Option<&[&str]>) -> (Error, usize);
 
-    fn write_ready(&self) -> i32 {
-	GE_NOTSUP
+    fn write_ready(&self) -> Error {
+	Error::NotSup
     }
 
     fn new_channel(&self, _g: Gensio, _auxdata: Option<&[&str]>)
-		   -> i32 {
-	GE_NOTSUP
+		   -> Error {
+	Error::NotSup
     }
 
-    fn send_break(&self) -> i32 {
-	GE_NOTSUP
+    fn send_break(&self) -> Error {
+	Error::NotSup
     }
 
-    fn auth_begin(&self) -> i32 {
-	GE_NOTSUP
+    fn auth_begin(&self) -> Error {
+	Error::NotSup
     }
 
-    fn precert_verify(&self) -> i32 {
-	GE_NOTSUP
+    fn precert_verify(&self) -> Error {
+	Error::NotSup
     }
 
-    fn postcert_verify(&self, _err: i32, _errstr: Option<&str>) -> i32 {
-	GE_NOTSUP
+    fn postcert_verify(&self, _err: Error, _errstr: Option<&str>) -> Error {
+	Error::NotSup
     }
 
-    fn password_verify(&self, _passwd: &str) -> i32 {
-	GE_NOTSUP
+    fn password_verify(&self, _passwd: &str) -> Error {
+	Error::NotSup
     }
 
-    fn request_password(&self, _maxsize: usize) -> (i32, Option<String>) {
-	(GE_NOTSUP, None)
+    fn request_password(&self, _maxsize: usize) -> (Error, Option<String>) {
+	(Error::NotSup, None)
     }
 
-    fn verify_2fa(&self, _data: &[u8]) -> i32 {
-	GE_NOTSUP
+    fn verify_2fa(&self, _data: &[u8]) -> Error {
+	Error::NotSup
     }
 
-    fn request_2fa(&self) -> (i32, Option<&[u8]>) {
-	(GE_NOTSUP, None)
+    fn request_2fa(&self) -> (Error, Option<&[u8]>) {
+	(Error::NotSup, None)
     }
 
     fn win_size(&self, _height: u32, _width: u32) { }
@@ -508,12 +534,12 @@ pub struct CAuxVec {
 /// Convert a slice of strings to a vector of pointers to CString raw
 /// values.  You use as_ptr() to get a pointer to the array for
 /// something to pass into a C function that takes char **.
-pub fn strslice_to_auxvec(vi: &[&str]) -> Result<CAuxVec, i32> {
+pub fn strslice_to_auxvec(vi: &[&str]) -> Result<CAuxVec, Error> {
     let mut cauxvec = CAuxVec { v: Vec::new() };
     for i in vi {
 	let cs = match ffi::CString::new(i.to_string()) {
 	    Ok(v) => v,
-	    Err(_) => return Err(GE_INVAL)
+	    Err(_) => return Err(Error::Inval)
 	};
 	cauxvec.v.push(ffi::CString::into_raw(cs));
     }
@@ -539,18 +565,18 @@ struct DummyEvHndl {
 }
 
 impl Event for DummyEvHndl {
-    fn err(&self, _err: i32) -> i32 {
-	GE_NOTSUP
+    fn err(&self, _err: Error) -> Error {
+	Error::NotSup
     }
 
     fn read(&self, _buf: &[u8], _auxdata: Option<&[&str]>)
-	    -> (i32, usize) {
-	(GE_NOTSUP, 0)
+	    -> (Error, usize) {
+	(Error::NotSup, 0)
     }
 }
 
 fn new_gensio_data(o: &osfuncs::OsFuncs, cb: Weak<dyn Event>,
-	           state: GensioState) -> Result<GensioData, i32> {
+	           state: GensioState) -> Result<GensioData, Error> {
     Ok(GensioData {
         o: o.clone(), cb, state: Mutex::new(state),
         close_waiter: o.new_waiter()?,
@@ -559,7 +585,7 @@ fn new_gensio_data(o: &osfuncs::OsFuncs, cb: Weak<dyn Event>,
 
 fn new_gensio(o: &osfuncs::OsFuncs, g: *const raw::gensio,
 	      cb: Weak<dyn Event>, state: GensioState,
-	      d: Option<*mut GensioData>) -> Result<Gensio, i32>
+	      d: Option<*mut GensioData>) -> Result<Gensio, Error>
 {
     let d = match d {
 	Some(d) => d,
@@ -576,11 +602,11 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
     let g = user_data as *mut GensioData;
     let cb = unsafe { (*g).cb.upgrade() };
     let cb = match cb {
-	None => return GE_NOTREADY,
+	None => return Error::NotReady as ffi::c_int,
 	Some(cb) => cb
     };
 
-    let mut err = 0;
+    let mut err = Error::NoErr;
     match event {
 	raw::GENSIO_EVENT_LOG => {
 	    let s = unsafe { raw::gensio_loginfo_to_str(buf) };
@@ -590,7 +616,6 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		cb.log(logstr);
 		unsafe { raw::gensio_free_loginfo_str(s); }
 	    }
-	    err = 0;
 	}
 	raw::GENSIO_EVENT_PARMLOG => {
 	    let s = unsafe { raw::gensio_parmlog_to_str(buf) };
@@ -600,11 +625,10 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		cb.parmlog(logstr);
 		unsafe { raw::gensio_free_loginfo_str(s); }
 	    }
-	    err = 0;
 	}
 	raw::GENSIO_EVENT_READ => {
 	    if ierr != 0 {
-		return cb.err(ierr);
+		return cb.err(val_to_error(ierr)) as ffi::c_int;
 	    }
 
 	    // Convert the buffer into a slice.  You can't use it directly as
@@ -634,7 +658,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    let new_g = match new_gensio(&o, g2, Arc::downgrade(&tmpcb) as _,
 					 GensioState::Open, None) {
 		Ok(g) => g,
-		Err(e) => return e
+		Err(e) => return e as ffi::c_int
 	    };
 	    unsafe {
 		raw::gensio_set_callback(new_g.g, evhndl,
@@ -665,7 +689,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		    Some(cs.to_str().expect("Invalid string"))
 		}
 	    };
-	    err = cb.postcert_verify(ierr, errstr);
+	    err = cb.postcert_verify(val_to_error(ierr), errstr);
 	}
 	raw::GENSIO_EVENT_PASSWORD_VERIFY => {
 	    let cs = unsafe { ffi::CStr::from_ptr(buf as *const ffi::c_char) };
@@ -676,17 +700,17 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    let s;
 	    let maxlen = unsafe {*buflen as usize };
 	    (err, s) = cb.request_password(maxlen);
-	    if err == 0 {
+	    if err == Error::NoErr {
 		match s {
-		    None => return GE_INVAL,
+		    None => return Error::Inval as ffi::c_int,
 		    Some(s) => {
 			let len = s.len();
 			if len > maxlen {
-			    return GE_TOOBIG;
+			    return Error::TooBig as ffi::c_int;
 			}
 			let cs = match ffi::CString::new(s) {
 			    Ok(v) => v,
-			    Err(_) => return GE_INVAL
+			    Err(_) => return Error::Inval as ffi::c_int
 			};
 			let src = cs.to_bytes();
 			let dst = buf as *mut u8;
@@ -702,11 +726,11 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	raw::GENSIO_EVENT_REQUEST_2FA => {
 	    let src;
 	    (err, src) = cb.request_2fa();
-	    if err != 0 {
-		return err;
+	    if err != Error::NoErr {
+		return err as ffi::c_int;
 	    }
 	    let src = match src {
-		None => return GE_INVAL,
+		None => return Error::Inval as ffi::c_int,
 		Some(v) => v
 	    };
 	    let len = src.len();
@@ -828,9 +852,9 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    let data = unsafe { *data };
 	    cb.rts(data);
 	}
-	_ => err = GE_NOTSUP
+	_ => err = Error::NotSup
     }
-    err
+    err as ffi::c_int
 }
 
 extern "C" fn evhndl(io: *const raw::gensio, user_data: *const ffi::c_void,
@@ -843,7 +867,7 @@ extern "C" fn evhndl(io: *const raw::gensio, user_data: *const ffi::c_void,
     });
     match r {
 	Ok(v) => v,
-	Err(_) => GE_OSERR
+	Err(_) => Error::OsErr as ffi::c_int
     }
 }
 
@@ -852,12 +876,12 @@ extern "C" fn evhndl(io: *const raw::gensio, user_data: *const ffi::c_void,
 /// clones it so it can make sure the data stays around until the
 /// gensio is closed.  See str_to_gensio() for details.
 pub fn new(s: &str, o: &osfuncs::OsFuncs, cb: Weak<dyn Event>)
-	   -> Result<Gensio, i32>
+	   -> Result<Gensio, Error>
 {
     let g: *const raw::gensio = std::ptr::null();
     let s = match ffi::CString::new(s) {
 	Ok(s) => s,
-	Err(_) => return Err(GE_INVAL)
+	Err(_) => return Err(Error::Inval)
     };
     // Create a temporary data item so str_to_gensio can report parmlogs.
     let gd = Box::new(new_gensio_data(&o.clone(), cb.clone(),
@@ -874,7 +898,7 @@ pub fn new(s: &str, o: &osfuncs::OsFuncs, cb: Weak<dyn Event>)
 	0 => Ok(Gensio { g, d: gd }),
 	_ => {
 	    unsafe { drop(Box::from_raw(gd)) }; // Free our original box
-	    Err(err)
+	    Err(val_to_error(err))
 	}
     }
 }
@@ -902,7 +926,7 @@ impl Gensio {
     /// complete.
     ///
     /// Note that the gensio is not open until the callback is called.
-    pub fn open(&self, cb: Weak<dyn OpDoneErr>) -> Result<(), i32> {
+    pub fn open(&self, cb: Weak<dyn OpDoneErr>) -> Result<(), Error> {
 	let d = Box::new(OpDoneErrData { cb });
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
 	let d = Box::into_raw(d);
@@ -919,7 +943,7 @@ impl Gensio {
 	    }
 	    _ => {
 		unsafe { drop(Box::from_raw(d)); } // Free the data
-		Err(err)
+		Err(val_to_error(err))
 	    }
 	}
     }
@@ -931,13 +955,11 @@ impl Gensio {
 
     // Open the gensio synchronously.  Wait until the open completes
     // before returning.
-    pub fn open_s(&self) -> Result<(), i32> {
-	let err = unsafe {
-	    raw::gensio_open_s(self.g)
-	};
+    pub fn open_s(&self) -> Result<(), Error> {
+	let err = unsafe { raw::gensio_open_s(self.g) };
 	match err {
 	    0 => Ok(()),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -948,7 +970,7 @@ impl Gensio {
     /// care.
     ///
     /// Note that the gensio is not closed until the callback is called.
-    pub fn close(&self, cb: Option<Weak<dyn OpDone>>) -> Result<(), i32> {
+    pub fn close(&self, cb: Option<Weak<dyn OpDone>>) -> Result<(), Error> {
 	let d = Box::new(CloseDoneData { cb, d: self.d });
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
 	let d = Box::into_raw(d);
@@ -965,14 +987,14 @@ impl Gensio {
 	    }
 	    _ => {
 		unsafe { drop(Box::from_raw(d)); } // Free the data
-		Err(err)
+		Err(val_to_error(err))
 	    }
 	}
     }
 
     // Close the gensio synchronously.  Wait until the close completes
     // before returning.
-    pub fn close_s(&self) -> Result<(), i32> {
+    pub fn close_s(&self) -> Result<(), Error> {
 	let err = unsafe {
 	    raw::gensio_close_s(self.g)
 	};
@@ -982,7 +1004,7 @@ impl Gensio {
 		*state = GensioState::Closed;
 		Ok(())
 	    }
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -990,7 +1012,7 @@ impl Gensio {
     /// bytes written is returned.  On failure an error code is
     /// returned.
     pub fn write(&self, data: &[u8], auxdata: Option<&[&str]>)
-		 -> Result<u64, i32> {
+		 -> Result<u64, Error> {
 	let mut count: GensioDS = 0;
 	let a1 = match auxdata {
 	    None => None,
@@ -1009,7 +1031,7 @@ impl Gensio {
 	};
 	match err {
 	    0 => Ok(count),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -1017,7 +1039,7 @@ impl Gensio {
     /// bytes written is returned.  On failure an error code is
     /// returned.
     pub fn write_s(&self, data: &[u8], timeout: Option<&Duration>)
-		   -> Result<u64, i32> {
+		   -> Result<u64, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -1030,7 +1052,7 @@ impl Gensio {
 	};
 	match err {
 	    0 => Ok(count),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -1038,7 +1060,7 @@ impl Gensio {
     /// On success, the number of bytes written is returned.  On
     /// failure an error code is returned.
     pub fn write_s_intr(&self, data: &[u8], timeout: Option<&Duration>)
-			-> Result<u64, i32> {
+			-> Result<u64, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -1051,7 +1073,7 @@ impl Gensio {
 	};
 	match err {
 	    0 => Ok(count),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -1059,7 +1081,7 @@ impl Gensio {
     /// bytes read is returned.  On failure an error code is
     /// returned.
     pub fn read_s(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
-		  -> Result<u64, i32> {
+		  -> Result<u64, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -1075,7 +1097,7 @@ impl Gensio {
 		unsafe { data.set_len(count as usize); }
 		Ok(count)
 	    }
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -1083,7 +1105,7 @@ impl Gensio {
     /// bytes read is returned.  On failure an error code is
     /// returned.
     pub fn read_s_intr(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
-		  -> Result<u64, i32> {
+		  -> Result<u64, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -1099,7 +1121,7 @@ impl Gensio {
 		unsafe { data.set_len(count as usize); }
 		Ok(count)
 	    }
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -1123,7 +1145,7 @@ impl Gensio {
     /// can be held is stored in data upon return and the required
     /// size to return all data is returned in Ok().
     pub fn control(&self, depth: i32, dir: ControlDir, option: ControlOp,
-		   data: &mut Vec<u8>) -> Result<usize, i32> {
+		   data: &mut Vec<u8>) -> Result<usize, Error> {
 	let err;
 	let mut len: GensioDS;
 	unsafe {
@@ -1145,13 +1167,13 @@ impl Gensio {
 	    }
 	    Ok(len as usize)
 	} else {
-	    Err(err)
+	    Err(val_to_error(err))
 	}
     }
 
     /// Call gensio_control() and return a vector holding the result.
     pub fn control_resize(&self, depth: i32, dir: ControlDir, option: ControlOp,
-			  data: &[u8]) -> Result<Vec<u8>, i32> {
+			  data: &[u8]) -> Result<Vec<u8>, Error> {
 	let mut len: usize;
 	let mut data2 = data.to_vec();
 	len = self.control(depth, dir, option, &mut data2)?;
@@ -1162,7 +1184,7 @@ impl Gensio {
 	data2.reserve(len + 1); // Add 1 for C string terminator
 	len = self.control(depth, dir, option, &mut data2)?;
 	if len >= data2.capacity() {
-	    Err(GE_TOOBIG)
+	    Err(Error::TooBig)
 	} else {
 	    Ok(data2)
 	}
@@ -1172,19 +1194,17 @@ impl Gensio {
     /// string is returned in Ok().
     pub fn control_str(&self, depth: i32, dir: ControlDir, option: ControlOp,
 		       val: &str)
-		       -> Result<String, i32> {
+		       -> Result<String, Error> {
 	let valv = to_term_str_bytes(val);
-	match self.control_resize(depth, dir, option, &valv) {
-	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
-	    Err(err) => Err(err)
-	}
+	let newv = self.control_resize(depth, dir, option, &valv)?;
+	Ok(String::from_utf8_lossy(&newv).to_string())
     }
 
     /// Call gensio_acontrol with the given options.
     pub fn acontrol(&self, depth: i32, dir: ControlDir, option: AControlOp,
 		    data: &[u8], done: Option<Weak<dyn ControlDone>>,
 		    timeout: Option<&Duration>)
-		    -> Result<(), i32> {
+		    -> Result<(), Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -1208,7 +1228,7 @@ impl Gensio {
 		if !d.is_null() {
 		    unsafe { drop(Box::from_raw(d)); } // Free the data
 		}
-		Err(err)
+		Err(val_to_error(err))
 	    }
 	}
     }
@@ -1218,7 +1238,7 @@ impl Gensio {
     pub fn acontrol_str(&self, depth: i32, dir: ControlDir, option: AControlOp,
 			data: &str, done: Option<Weak<dyn ControlDone>>,
 			timeout: Option<&Duration>)
-			-> Result<(), i32> {
+			-> Result<(), Error> {
 	
 	let datav = to_term_str_bytes(data);
 	self.acontrol(depth, dir, option, datav.as_slice(), done, timeout)
@@ -1229,7 +1249,7 @@ impl Gensio {
     /// size to return all data is returned in Ok().
     pub fn acontrol_s(&self, depth: i32, dir: ControlDir, option: AControlOp,
 		      data: &mut Vec<u8>,
-		      timeout: Option<&Duration>) -> Result<usize, i32> {
+		      timeout: Option<&Duration>) -> Result<usize, Error> {
 	let err;
 	let mut len: GensioDS;
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
@@ -1255,7 +1275,7 @@ impl Gensio {
 	    }
 	    Ok(len as usize)
 	} else {
-	    Err(err)
+	    Err(val_to_error(err))
 	}
     }
 
@@ -1263,7 +1283,7 @@ impl Gensio {
     pub fn acontrol_resize_s(&self, depth: i32, dir: ControlDir,
 			     option: AControlOp, data: &[u8],
 			     timeout: Option<&Duration>)
-			     -> Result<Vec<u8>, i32> {
+			     -> Result<Vec<u8>, Error> {
 	let mut len: usize;
 	let mut data2 = data.to_vec();
 	len = self.acontrol_s(depth, dir, option, &mut data2, timeout)?;
@@ -1274,7 +1294,7 @@ impl Gensio {
 	data2.reserve(len + 1); // Add 1 for C string terminator
 	len = self.acontrol_s(depth, dir, option, &mut data2, timeout)?;
 	if len >= data2.capacity() {
-	    Err(GE_TOOBIG)
+	    Err(Error::TooBig)
 	} else {
 	    Ok(data2)
 	}
@@ -1285,19 +1305,17 @@ impl Gensio {
     pub fn acontrol_str_s(&self, depth: i32, dir: ControlDir,
 			  option: AControlOp,
 			  val: &str, timeout: Option<&Duration>)
-			  -> Result<String, i32> {
+			  -> Result<String, Error> {
 	let valv = to_term_str_bytes(val);
-	match self.acontrol_resize_s(depth, dir, option, &valv, timeout) {
-	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
-	    Err(err) => Err(err)
-	}
+	let newv = self.acontrol_resize_s(depth, dir, option, &valv, timeout)?;
+	Ok(String::from_utf8_lossy(&newv).to_string())
     }
 
     /// Like acontrol_s() but this version is interruptible on Unix
     /// like systems.
     pub fn acontrol_s_intr(&self, depth: i32, dir: ControlDir,
 			   option: AControlOp, data: &mut Vec<u8>,
-			   timeout: Option<&Duration>) -> Result<usize, i32> {
+			   timeout: Option<&Duration>) -> Result<usize, Error> {
 	let err;
 	let mut len: GensioDS;
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
@@ -1323,7 +1341,7 @@ impl Gensio {
 	    }
 	    Ok(len as usize)
 	} else {
-	    Err(err)
+	    Err(val_to_error(err))
 	}
     }
 
@@ -1331,7 +1349,7 @@ impl Gensio {
     pub fn acontrol_resize_s_intr(&self, depth: i32, dir: ControlDir,
 				  option: AControlOp, data: &[u8],
 				  timeout: Option<&Duration>)
-				  -> Result<Vec<u8>, i32> {
+				  -> Result<Vec<u8>, Error> {
 	let mut len: usize;
 	let mut data2 = data.to_vec();
 	len = self.acontrol_s_intr(depth, dir, option, &mut data2, timeout)?;
@@ -1342,7 +1360,7 @@ impl Gensio {
 	data2.reserve(len + 1); // Add 1 for C string terminator
 	len = self.acontrol_s_intr(depth, dir, option, &mut data2, timeout)?;
 	if len >= data2.capacity() {
-	    Err(GE_TOOBIG)
+	    Err(Error::TooBig)
 	} else {
 	    Ok(data2)
 	}
@@ -1353,24 +1371,20 @@ impl Gensio {
     pub fn acontrol_str_s_intr(&self, depth: i32, dir: ControlDir,
 			       option: AControlOp,
 			       val: &str, timeout: Option<&Duration>)
-			       -> Result<String, i32> {
+			       -> Result<String, Error> {
 	let valv = to_term_str_bytes(val);
-	match self.acontrol_resize_s_intr(depth, dir, option, &valv,
-					  timeout) {
-	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
-	    Err(err) => Err(err)
-	}
+	let newv = self.acontrol_resize_s_intr(depth, dir, option, &valv,
+					       timeout)?;
+	Ok(String::from_utf8_lossy(&newv).to_string())
     }
 
     /// Return a string for the gensio type at the given depth.
     pub fn get_type(&self, depth: u32) -> String {
-	let s;
 	unsafe {
 	    let cs = raw::gensio_get_type(self.g, depth as ffi::c_uint);
 	    let cs = ffi::CStr::from_ptr(cs);
-	    s = cs.to_str().expect("Invalid string").to_string();
+	    cs.to_str().expect("Invalid string").to_string()
 	}
-	s
     }
 
     /// Return if the gensio is client side or server side.
@@ -1434,20 +1448,20 @@ impl Gensio {
 
     /// Enable synchronous mode on the gensio, so read_s and write_s
     /// work.  See gensio_set_sync.3.
-    pub fn set_sync(&self) -> Result<(), i32> {
+    pub fn set_sync(&self) -> Result<(), Error> {
 	let err = unsafe { raw::gensio_set_sync(self.g) };
 	match err {
 	    0 => Ok(()),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
     /// Disable synchronous mode on a gensio.
-    pub fn clear_sync(&self) -> Result<(), i32> {
+    pub fn clear_sync(&self) -> Result<(), Error> {
 	let err = unsafe { raw::gensio_clear_sync(self.g) };
 	match err {
 	    0 => Ok(()),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 }
@@ -1492,46 +1506,46 @@ pub trait AccepterEvent {
     fn parmlog(&self, _s: String) {}
 
     /// A gensio has come in on a connection.
-    fn new_connection(&self, g: Gensio) -> i32;
+    fn new_connection(&self, g: Gensio) -> Error;
 
     /// See gensio_event.3, GENSIO_EVENT_AUTH_BEGIN.
-    fn auth_begin(&self) -> i32 {
-	GE_NOTSUP
+    fn auth_begin(&self) -> Error {
+	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_PRECERT_VERIFY.
-    fn precert_verify(&self) -> i32 {
-	GE_NOTSUP
+    fn precert_verify(&self) -> Error {
+	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_POSTCERT_VERIFY.
-    fn postcert_verify(&self, _err: i32, _errstr: Option<&str>) -> i32 {
-	GE_NOTSUP
+    fn postcert_verify(&self, _err: Error, _errstr: Option<&str>) -> Error {
+	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_PASSWORD_VERIFY.
-    fn password_verify(&self, _passwd: &str) -> i32 {
-	GE_NOTSUP
+    fn password_verify(&self, _passwd: &str) -> Error {
+	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_PASSWORD_REQUEST_PASSWORD.
-    fn request_password(&self, _maxsize: u64) -> (i32, Option<String>) {
-	(GE_NOTSUP, None)
+    fn request_password(&self, _maxsize: u64) -> (Error, Option<String>) {
+	(Error::NotSup, None)
     }
 
     /// See gensio_event.3, GENSIO_EVENT_VERIFY_2FA.
-    fn verify_2fa(&self, _data: &[u8]) -> i32 {
-	GE_NOTSUP
+    fn verify_2fa(&self, _data: &[u8]) -> Error {
+	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_REQUEST_2FA.
-    fn request_2fa(&self) -> (i32, Option<&[u8]>) {
-	(GE_NOTSUP, None)
+    fn request_2fa(&self) -> (Error, Option<&[u8]>) {
+	(Error::NotSup, None)
     }
 }
 
 /// See gensio_acc_control.3 for these.
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum AccControlOp {
     LAddr = 1,
     LPort = 2,
@@ -1564,13 +1578,12 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 		data: *const ffi::c_void)
 		-> ffi::c_int {
     let a = user_data as *mut AccepterData;
-    let cb = unsafe { (*a).cb.upgrade() };
-    let cb = match cb {
-	None => return GE_NOTREADY,
+    let cb = match unsafe { (*a).cb.upgrade() } {
+	None => return Error::NotReady as ffi::c_int,
 	Some(cb) => cb
     };
 
-    let err: i32;
+    let mut err: Error = Error::NoErr;
     match event {
 	raw::GENSIO_ACC_EVENT_LOG => {
 	    let s = unsafe { raw::gensio_loginfo_to_str(data) };
@@ -1580,7 +1593,6 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 		cb.log(logstr);
 		unsafe { raw::gensio_free_loginfo_str(s); }
 	    }
-	    err = 0;
 	}
 	raw::GENSIO_ACC_EVENT_PARMLOG => {
 	    let s = unsafe { raw::gensio_parmlog_to_str(data) };
@@ -1590,7 +1602,6 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 		cb.parmlog(logstr);
 		unsafe { raw::gensio_free_loginfo_str(s); }
 	    }
-	    err = 0;
 	}
 	raw::GENSIO_ACC_EVENT_NEW_CONNECTION => {
 	    let g = data as *const raw::gensio;
@@ -1602,7 +1613,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    let new_g = match new_gensio(&o, g, Arc::downgrade(&tmpcb) as _,
 					 GensioState::Open, None) {
 		Ok(g) => g,
-		Err(e) => return e
+		Err(e) => return e as ffi::c_int
 	    };
 	    unsafe {
 		raw::gensio_set_callback(new_g.g, evhndl,
@@ -1626,7 +1637,8 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 		    Some(cs.to_str().expect("Invalid string"))
 		}
 	    };
-	    err = cb.postcert_verify(unsafe { (*vd).err }, errstr);
+	    err = cb.postcert_verify(unsafe { val_to_error((*vd).err) },
+				     errstr);
 	}
 	raw::GENSIO_ACC_EVENT_PASSWORD_VERIFY => {
 	    let vd = data as *const raw::gensio_acc_password_verify_data;
@@ -1639,17 +1651,17 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    let s;
 	    let maxlen = unsafe { (*vd).password_len } as usize;
 	    (err, s) = cb.request_password(maxlen as u64);
-	    if err == 0 {
+	    if err == Error::NoErr {
 		match s {
-		    None => return GE_INVAL,
+		    None => return err as ffi::c_int,
 		    Some(s) => {
 			let len = s.len();
 			if len > maxlen {
-			    return GE_TOOBIG;
+			    return Error::TooBig as ffi::c_int;
 			}
 			let cs = match ffi::CString::new(s) {
 			    Ok(v) => v,
-			    Err(_) => return GE_INVAL
+			    Err(_) => return Error::Inval as ffi::c_int
 			};
 			let src = cs.to_bytes();
 			let dst = unsafe { (*vd).password as *mut u8 };
@@ -1674,25 +1686,25 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    let vd = data as *mut raw::gensio_acc_password_verify_data;
 	    let src;
 	    (err, src) = cb.request_2fa();
-	    if err != 0 {
-		return err;
+	    if err != Error::NoErr {
+		return err as ffi::c_int;
 	    }
 	    let src = match src {
-		None => return GE_INVAL,
+		None => return Error::Inval as ffi::c_int,
 		Some(v) => v
 	    };
 	    let len = src.len();
 	    if len > unsafe { (*vd).password_len } as usize {
-		return GE_TOOBIG;
+		return Error::TooBig as ffi::c_int;
 	    }
 	    let dst = unsafe { (*vd).password as *mut u8 };
 	    let dst = unsafe {std::slice::from_raw_parts_mut(dst, len) };
 	    dst[..len].copy_from_slice(&src[..len]);
 	    unsafe {(*vd).password_len = len as GensioDS; }
 	}
-	_ => { err = GE_NOTSUP; }
+	_ => { err = Error::NotSup; }
     }
-    err
+    err as ffi::c_int
 }
 
 extern "C" fn acc_evhndl(acc: *const raw::gensio_accepter,
@@ -1705,7 +1717,7 @@ extern "C" fn acc_evhndl(acc: *const raw::gensio_accepter,
     });
     match r {
 	Ok(v) => v,
-	Err(_) => GE_OSERR
+	Err(_) => Error::OsErr as ffi::c_int
     }
 }
 
@@ -1715,11 +1727,11 @@ extern "C" fn acc_evhndl(acc: *const raw::gensio_accepter,
 /// str_to_gensio_accepter.3
 pub fn new_accepter(s: &str, o: &osfuncs::OsFuncs,
 		    cb: Weak<dyn AccepterEvent>)
-		    -> Result<Accepter, i32> {
+		    -> Result<Accepter, Error> {
     let a: *const raw::gensio_accepter = std::ptr::null();
     let s = match ffi::CString::new(s) {
 	Ok(s) => s,
-	Err(_) => return Err(GE_INVAL)
+	Err(_) => return Err(Error::Inval)
     };
     // Create the callback data.
     let dt = Box::new(AccepterData { o: o.clone(),
@@ -1740,7 +1752,7 @@ pub fn new_accepter(s: &str, o: &osfuncs::OsFuncs,
 	}
 	_ => {
             let _dt = unsafe {Box::from_raw(dt) }; // Free our original box
-            Err(err)
+            Err(val_to_error(err))
         }
     }
 }
@@ -1798,7 +1810,7 @@ impl Accepter {
     }
 
     /// Start the accepter running.
-    pub fn startup(&self) -> Result<(), i32> {
+    pub fn startup(&self) -> Result<(), Error> {
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
 	let err = unsafe {
 	    raw::gensio_acc_startup(self.a)
@@ -1808,7 +1820,7 @@ impl Accepter {
 		*state = GensioState::Open;
 		Ok(())
 	    }
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -1816,7 +1828,7 @@ impl Accepter {
     /// until the callback is called.  You can pass in None to the
     /// callback if you don't care.
     pub fn shutdown(&self, cb: Option<Weak<dyn AccepterShutdownDone>>)
-		    -> Result<(), i32> {
+		    -> Result<(), Error> {
 	let d = Box::new(
 	    AccepterShutdownDoneData { cb, d: self.d });
 	let mut state = unsafe { (*self.d).state.lock().unwrap() };
@@ -1835,7 +1847,7 @@ impl Accepter {
 	    }
 	    _ => {
 		unsafe { drop(Box::from_raw(d)); } // Free the data
-		Err(err)
+		Err(val_to_error(err))
 	    }
 	}
     }
@@ -1843,7 +1855,7 @@ impl Accepter {
     /// Stop the accepter.  Wait until the shutdown completes before
     /// returning.
     pub fn shutdown_s(&self)
-		      -> Result<(), i32> {
+		      -> Result<(), Error> {
 	let err = unsafe {
 	    raw::gensio_acc_shutdown_s(self.a)
 	};
@@ -1853,7 +1865,7 @@ impl Accepter {
 		*state = GensioState::Closed;
 		Ok(())
 	    }
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }	
 
@@ -1861,7 +1873,7 @@ impl Accepter {
     /// data as can be held is stored in data upon return and the
     /// required size to return all data is returned in Ok().
     pub fn control(&self, depth: i32, dir: ControlDir, option: AccControlOp,
-		   data: &mut Vec<u8>) -> Result<usize, i32> {
+		   data: &mut Vec<u8>) -> Result<usize, Error> {
 	let err;
 	let mut len: GensioDS;
 	unsafe {
@@ -1884,14 +1896,14 @@ impl Accepter {
 	    }
 	    Ok(len as usize)
 	} else {
-	    Err(err)
+	    Err(val_to_error(err))
 	}
     }
 
     /// Call gensio_acc_control() and return a vector holding the result.
     pub fn control_resize(&self, depth: i32, dir: ControlDir,
 			  option: AccControlOp,
-			  data: &[u8]) -> Result<Vec<u8>, i32> {
+			  data: &[u8]) -> Result<Vec<u8>, Error> {
 	let mut len: usize;
 	let mut data2 = data.to_vec();
 	len = self.control(depth, dir, option, &mut data2)?;
@@ -1902,7 +1914,7 @@ impl Accepter {
 	data2.reserve(len + 1);
 	len = self.control(depth, dir, option, &mut data2)?;
 	if len >= data2.capacity() {
-	    Err(GE_TOOBIG)
+	    Err(Error::TooBig)
 	} else {
 	    Ok(data2)
 	}
@@ -1912,7 +1924,7 @@ impl Accepter {
     /// string is returned in Ok().
     pub fn control_str(&self, depth: i32, dir: ControlDir, option: AccControlOp,
 		       val: &str)
-		       -> Result<String, i32> {
+		       -> Result<String, Error> {
 	let valv = val.as_bytes().to_vec();
 	let rv = self.control_resize(depth, dir, option, &valv)?;
 	Ok(String::from_utf8_lossy(&rv).to_string())
@@ -2002,14 +2014,14 @@ pub fn parity_to_str(val: u32) -> String {
 }
 
 /// Convert an integer parity string to a numeric value.
-pub fn str_to_parity(sval: &str) -> Result<u32, i32> {
+pub fn str_to_parity(sval: &str) -> Result<u32, Error> {
     let cs = match ffi::CString::new(sval) {
 	Ok(s) => s,
-	Err(_) => return Err(GE_INVAL)
+	Err(_) => return Err(Error::Inval)
     };
     let val = unsafe { raw::gensio_str_to_parity(cs.as_ptr()) };
     if val < 0 {
-	Err(GE_INVAL)
+	Err(Error::Inval)
     } else {
 	Ok(val as u32)
     }
@@ -2023,14 +2035,14 @@ pub fn flowcontrol_to_str(val: u32) -> String {
 }
 
 /// Convert an integer flowcontrol string to a numeric value.
-pub fn str_to_flowcontrol(sval: &str) -> Result<u32, i32> {
+pub fn str_to_flowcontrol(sval: &str) -> Result<u32, Error> {
     let cs = match ffi::CString::new(sval) {
 	Ok(s) => s,
-	Err(_) => return Err(GE_INVAL)
+	Err(_) => return Err(Error::Inval)
     };
     let val = unsafe { raw::gensio_str_to_flowcontrol(cs.as_ptr()) };
     if val < 0 {
-	Err(GE_INVAL)
+	Err(Error::Inval)
     } else {
 	Ok(val as u32)
     }
@@ -2044,20 +2056,20 @@ pub fn onoff_to_str(val: u32) -> String {
 }
 
 /// Convert an integer onoff string to a numeric value.
-pub fn str_to_onoff(sval: &str) -> Result<u32, i32> {
+pub fn str_to_onoff(sval: &str) -> Result<u32, Error> {
     let cs = match ffi::CString::new(sval) {
 	Ok(s) => s,
-	Err(_) => return Err(GE_INVAL)
+	Err(_) => return Err(Error::Inval)
     };
     let val = unsafe { raw::gensio_str_to_onoff(cs.as_ptr()) };
     if val < 0 {
-	Err(GE_INVAL)
+	Err(Error::Inval)
     } else {
 	Ok(val as u32)
     }
 }
 
-pub fn err_to_str(err: i32) -> String {
+pub fn err_to_str(err: Error) -> String {
     let cs = unsafe { raw::gensio_err_to_str(err as ffi::c_int) };
     let cs = unsafe { ffi::CStr::from_ptr(cs).to_bytes() };
     String::from_utf8_lossy(cs).to_string()
@@ -2085,24 +2097,23 @@ mod tests {
     }
 
     impl Event for EvStruct {
-	fn err(&self, err: i32) -> i32 {
-	    assert_eq!(err, 0);
-	    0
+	fn err(&self, err: Error) -> Error {
+	    panic!("Got error: {}", err);
 	}
 
 	fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
-		-> (i32, usize) {
+		-> (Error, usize) {
 	    assert_eq!(buf.len(), 7);
 	    let s = String::from_utf8_lossy(buf);
 	    assert_eq!(s, "teststr");
 	    self.w.wake().expect("Wake open done failed");
-	    (0, buf.len())
+	    (Error::NoErr, buf.len())
 	}
     }
 
     impl OpDoneErr for EvStruct {
-	fn done_err(&self, err: i32) {
-	    assert_eq!(err, 0);
+	fn done_err(&self, err: Error) {
+	    panic!("Got done error: {}", err);
 	}
 
 	fn done(&self) {
@@ -2174,11 +2185,11 @@ mod tests {
 	    self.w.wake().expect("Wake failed");
 	}
 
-	fn new_connection(&self, g: Gensio) -> i32 {
+	fn new_connection(&self, g: Gensio) -> Error {
 	    let mut d = self.d.lock().unwrap();
 	    d.ag = Some(g);
 	    self.w.wake().expect("Wake failed");
-	    0
+	    Error::NoErr
 	}
     }
 
@@ -2190,7 +2201,7 @@ mod tests {
 
     struct GenMutData {
 	logstr: Option<String>,
-	experr: i32,
+	experr: Error,
     }
 
     struct GenEvent {
@@ -2215,16 +2226,16 @@ mod tests {
 	    self.w.wake().expect("Wake failed");
 	}
 
-	fn err(&self, err: i32) -> i32 {
+	fn err(&self, err: Error) -> Error {
 	    let d = self.d.lock().unwrap();
 	    assert_eq!(d.experr, err);
 	    self.w.wake().expect("Wake failed");
-	    0
+	    Error::NoErr
 	}
 
 	fn read(&self, _buf: &[u8], _auxdata: Option<&[&str]>)
-		-> (i32, usize) {
-	    (0, 0)
+		-> (Error, usize) {
+	    (Error::NoErr, 0)
 	}
     }
 
@@ -2250,7 +2261,7 @@ mod tests {
 			     Arc::downgrade(&e) as _);
 	match a {
 	    Ok(_a) => assert!(false),
-	    Err(e) => assert_eq!(e, GE_UNKNOWN_NAME_ERROR)
+	    Err(e) => assert_eq!(e, Error::UnknownNameErr)
 	};
     }
 
@@ -2276,7 +2287,7 @@ mod tests {
 	};
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
-	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
+	let d = Mutex::new(GenMutData { logstr: None, experr: Error::NoErr });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d });
 	let g = new(&format!("tcp,127.0.0.1,{port}"), &o,
 		    Arc::downgrade(&e2) as _)
@@ -2309,7 +2320,7 @@ mod tests {
 	};
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
-	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
+	let d = Mutex::new(GenMutData { logstr: None, experr: Error::NoErr });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d });
 	let g = new(&format!("tcp,127.0.0.1,{port}"), &o,
 		    Arc::downgrade(&e2) as _).
@@ -2323,7 +2334,7 @@ mod tests {
 	{
 	    let w = o.new_waiter().expect("Couldn't allocate waiter");
 	    let d = Mutex::new(GenMutData { logstr: None,
-					    experr: GE_REMCLOSE });
+					    experr: Error::RemClose });
 	    e3 = Arc::new(GenEvent { w: w, _g: None, d });
 	    let d1 = e1.d.lock().unwrap();
 	    match &d1.ag {
@@ -2415,21 +2426,21 @@ mod tests {
     }
 
     impl Event for TelnetReflectorInst {
-        fn err(&self, err: i32) -> i32 {
+        fn err(&self, err: Error) -> Error {
 	    error!("{}", &format!("Error: {err}\n").to_string());
 	    self.shutdown();
-            0
+            Error::NoErr
         }
 
         fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
-                -> (i32, usize) {
+                -> (Error, usize) {
 	    match self.g.write(buf, None) {
 		Ok(len) => {
 		    if (len as usize) < buf.len() {
 			self.g.read_enable(false);
 			self.g.write_enable(true);
 		    }
-		    (0, (len as u64).try_into().unwrap())
+		    (Error::NoErr, (len as u64).try_into().unwrap())
 		}
 		Err(err) => {
 		    self.shutdown();
@@ -2438,10 +2449,10 @@ mod tests {
 	    }
         }
 
-        fn write_ready(&self) -> i32 {
+        fn write_ready(&self) -> Error {
             self.g.read_enable(true);
             self.g.write_enable(false);
-            0
+            Error::NoErr
         }
 
         fn baud(&self, baud: u32) {
@@ -2616,7 +2627,7 @@ mod tests {
     impl AccepterEvent for TelnetReflector {
 	// No need for parmlog, InitialTelnetReflectorEv handled that.
 
-        fn new_connection(&self, g: Gensio) -> i32 {
+        fn new_connection(&self, g: Gensio) -> Error {
 	    let mut list = self.list.list.lock().unwrap();
 
 	    let d = TelnetReflectorInstData { ..Default::default() };
@@ -2626,7 +2637,7 @@ mod tests {
 	    inst.g.set_handler(Arc::downgrade(&inst) as _);
 	    inst.g.read_enable(true);
 	    list.push(inst);
-	    0
+	    Error::NoErr
         }
     }
 
@@ -2641,13 +2652,13 @@ mod tests {
         }
 
 	// Refuse connections until we are ready.
-        fn new_connection(&self, _g: Gensio) -> i32 {
-            GE_NOTSUP
+        fn new_connection(&self, _g: Gensio) -> Error {
+            Error::NotSup
         }
     }
 
     fn new_telnet_reflector(o: &osfuncs::OsFuncs)
-			    -> Result<Arc<TelnetReflector>, i32> {
+			    -> Result<Arc<TelnetReflector>, Error> {
 	let h = Arc::new(InitialTelnetReflectorEv{});
         let a = new_accepter("telnet(rfc2217),tcp,localhost,0", o,
 			     Arc::downgrade(&h) as _)?;
@@ -2671,18 +2682,18 @@ mod tests {
 	    panic!("Unexpected parm log");
 	}
 
-	fn err(&self, _err: i32) -> i32 {
+	fn err(&self, _err: Error) -> Error {
 	    panic!("Unexpected err");
 	}
 
 	fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
-		-> (i32, usize) {
-	    (0, buf.len())
+		-> (Error, usize) {
+	    (Error::NoErr, buf.len())
 	}
     }
 
     impl ControlDone for SerialEvInst {
-	fn done_err(&self, _err: i32) {
+	fn done_err(&self, _err: Error) {
 	    panic!("Unexpected err");
 	}
 

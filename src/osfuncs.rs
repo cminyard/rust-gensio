@@ -8,6 +8,8 @@ use std::sync::Weak;
 use std::time::Duration;
 use std::ffi;
 use std::panic;
+use crate::Error;
+use crate::val_to_error;
 pub mod raw;
 
 // Used to refcount gensio_os_funcs.
@@ -56,7 +58,7 @@ pub const GENSIO_OS_FUNCS_FLAG_PRIO_INHERIT: u32 = 1 << 0;
 /// 0, generally.  There is a priority inheritance flag if you need
 /// that.
 pub fn new_flags(log_func: Weak<dyn GensioLogHandler>,
-		 flags: u32) -> Result<OsFuncs, i32> {
+		 flags: u32) -> Result<OsFuncs, Error> {
     let err;
     let o: *const raw::gensio_os_funcs = std::ptr::null();
 
@@ -89,13 +91,13 @@ pub fn new_flags(log_func: Weak<dyn GensioLogHandler>,
             };
             Ok(OsFuncs { o: Arc::new(ios) })
 	}
-	_ => Err(err)
+	_ => Err(val_to_error(err))
     }
 }
 
 /// Allocate an OsFuncs structure.  This takes a log handler for
 /// handling internal logs from gensios and osfuncs.
-pub fn new(log_func: Weak<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
+pub fn new(log_func: Weak<dyn GensioLogHandler>) -> Result<OsFuncs, Error> {
     new_flags(log_func, 0)
 }
 
@@ -232,7 +234,7 @@ impl OsFuncs {
     /// all other OsFuncs.  You almost certainly should call this.
     /// The cleanup function is called automatically as part of the
     /// OsFuncs automatic cleanup.
-    pub fn proc_setup(&self) -> Result<(), i32> {
+    pub fn proc_setup(&self) -> Result<(), Error> {
         let mut proc_data = self.o.proc_data.lock().unwrap();
         let new_proc_data: *const raw::gensio_os_proc_data = std::ptr::null();
 	let err = unsafe { raw::gensio_os_proc_setup(self.o.o,
@@ -242,7 +244,7 @@ impl OsFuncs {
                 *proc_data = new_proc_data;
                 Ok(())
             }
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -252,31 +254,31 @@ impl OsFuncs {
     /// the proc_setup function does this processing, too.  In general,
     /// and threads you create from a gensio thread using OS operations
     /// will also be set up correctly.
-    pub fn thread_setup(&self) -> Result<(), i32> {
+    pub fn thread_setup(&self) -> Result<(), Error> {
 	let err = unsafe { raw::gensio_os_thread_setup(self.o.o) };
 	match err {
 	    0 => Ok(()),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
     /// Register a callback to be called when a process termination
     /// signal is received.
     pub fn register_term_handler(&self, handler: Weak<dyn GensioTermHandler>)
-                                 -> Result<(), i32> {
+                                 -> Result<(), Error> {
         let proc_data;
         {
             let l_proc_data = self.o.proc_data.lock().unwrap();
             proc_data = *l_proc_data;
         }
         if proc_data.is_null() {
-            return Err(crate::GE_NOTREADY);
+            return Err(Error::NotReady);
         }
 
         let mut d = self.o.term_handler.cb.lock().unwrap();
         match *d {
             None => (),
-            Some(_) => return Err(crate::GE_INUSE)
+            Some(_) => return Err(Error::InUse)
         }
 
         *d = Some(handler);
@@ -287,26 +289,26 @@ impl OsFuncs {
         };
         match err {
             0 => Ok(()),
-            _ => Err(err)
+            _ => Err(val_to_error(err))
         }
     }
 
     /// Register a callback to be called when a SIGHUP is received.
     pub fn register_hup_handler(&self, handler: Weak<dyn GensioHupHandler>)
-                                 -> Result<(), i32> {
+                                 -> Result<(), Error> {
         let proc_data;
         {
             let l_proc_data = self.o.proc_data.lock().unwrap();
             proc_data = *l_proc_data;
         }
         if proc_data.is_null() {
-            return Err(crate::GE_NOTREADY);
+            return Err(Error::NotReady);
         }
 
         let mut d = self.o.hup_handler.cb.lock().unwrap();
         match *d {
             None => (),
-            Some(_) => return Err(crate::GE_INUSE)
+            Some(_) => return Err(Error::InUse)
         }
 
         *d = Some(handler);
@@ -318,7 +320,7 @@ impl OsFuncs {
         }
         match err {
             0 => Ok(()),
-            _ => Err(err)
+            _ => Err(val_to_error(err))
         }
     }
 
@@ -328,20 +330,20 @@ impl OsFuncs {
     pub unsafe fn register_winsize_handler(&self,
 				    console_iod: *const raw::gensio_iod,
                                     handler: Weak<dyn GensioWinsizeHandler>)
-                                    -> Result<(), i32> {
+                                    -> Result<(), Error> {
         let proc_data;
         {
             let l_proc_data = self.o.proc_data.lock().unwrap();
             proc_data = *l_proc_data;
         }
         if proc_data.is_null() {
-            return Err(crate::GE_NOTREADY);
+            return Err(Error::NotReady);
         }
 
         let mut d = self.o.winsize_handler.cb.lock().unwrap();
         match *d {
             None => (),
-            Some(_) => return Err(crate::GE_INUSE)
+            Some(_) => return Err(Error::InUse)
         }
 
         *d = Some(handler);
@@ -353,19 +355,19 @@ impl OsFuncs {
         }
         match err {
             0 => Ok(()),
-            _ => Err(err)
+            _ => Err(val_to_error(err))
         }
     }
 
     /// Allocate a new Waiter object for the OsFuncs.
-    pub fn new_waiter(&self) -> Result<Waiter, i32> {
+    pub fn new_waiter(&self) -> Result<Waiter, Error> {
 	let w;
 
 	unsafe {
 	    w = raw::gensio_os_funcs_alloc_waiter(self.o.o);
 	}
 	if w.is_null() {
-	    Err(crate::GE_NOMEM)
+	    Err(Error::NoMem)
 	} else {
 	    Ok(Waiter { o: self.o.clone() , w })
 	}
@@ -373,7 +375,7 @@ impl OsFuncs {
 
     /// Allocate a new Timer object for the OsFuncs.
     pub fn new_timer(&self, cb: Weak<dyn TimeoutHandler>)
-		     -> Result<Timer, i32> {
+		     -> Result<Timer, Error> {
 	let w;
 	unsafe {
 	    w = raw::gensio_os_funcs_alloc_waiter(self.o.o);
@@ -394,14 +396,14 @@ impl OsFuncs {
 
 	if t.is_null() {
 	    unsafe { drop(Box::from_raw(d)); }
-	    return Err(crate::GE_NOMEM);
+	    return Err(Error::NoMem);
 	}
 	Ok(Timer { t, d })
     }
 
     /// Allocate a new Runner object for the OsFuncs.
     pub fn new_runner(&self, handler: Weak<dyn RunnerHandler>)
-		     -> Result<Runner, i32> {
+		     -> Result<Runner, Error> {
 	let d = Box::new(RunnerData { o: self.o.clone(), handler });
 	let d = Box::into_raw(d);
 	let r;
@@ -414,14 +416,14 @@ impl OsFuncs {
 
 	if r.is_null() {
 	    unsafe { drop(Box::from_raw(d)); }
-	    return Err(crate::GE_NOMEM);
+	    return Err(Error::NoMem);
 	}
 	Ok(Runner { r, d })
     }
 
     /// Run the service loop once to handle events.
     pub fn service(&self, timeout: Option<&Duration>)
-		   -> Result<Option<Duration>, i32> {
+		   -> Result<Option<Duration>, Error> {
 	let t: *const raw::gensio_time;
         let mut to = raw::gensio_time { secs: 0, nsecs: 0 };
         match timeout {
@@ -442,7 +444,7 @@ impl OsFuncs {
                                                   (*t).nsecs as u32)}))
                 }
             }
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -475,20 +477,20 @@ pub struct Waiter {
 impl Waiter {
     /// Decrement the wakeup count on a wait() call.  When the count
     /// reaches 0, that function will return success.
-    pub fn wake(&self) -> Result<(), i32> {
+    pub fn wake(&self) -> Result<(), Error> {
 	let err = unsafe { raw::gensio_os_funcs_wake(self.o.o, self.w) };
 	match err {
 	    0 => Ok(()),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
     /// Wait for a given number of wake calls to occur, or a timeout.
     /// If that many wake calls occur, this returns success with a
     /// duration of how much time is left.  On a timeout it returns a
-    /// GE_TIMEDOUT error.  Other errors may occur.
+    /// TimedOut error.  Other errors may occur.
     pub fn wait(&self, count: u32, timeout: Option<&Duration>)
-		-> Result<Option<Duration>, i32> {
+		-> Result<Option<Duration>, Error> {
 	let t: *const raw::gensio_time;
         let mut to = raw::gensio_time { secs: 0, nsecs: 0 };
         match timeout {
@@ -510,14 +512,14 @@ impl Waiter {
                                                   (*t).nsecs as u32)}))
                 }
             }
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
     /// Like wait, but if a signal is received, this will return a
-    /// GE_INTERRUPTED error.
+    /// Interrupted error.
     pub fn wait_intr(&self, count: u32, timeout: Option<&Duration>)
-		     -> Result<Option<Duration>, i32> {
+		     -> Result<Option<Duration>, Error> {
 	let t: *const raw::gensio_time;
         let mut to = raw::gensio_time { secs: 0, nsecs: 0 };
         match timeout {
@@ -539,7 +541,7 @@ impl Waiter {
                                                   (*t).nsecs as u32)}))
                 }
             }
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 }
@@ -663,7 +665,7 @@ extern "C" fn timer_freed_handler(t: *const raw::gensio_timer,
 
 impl Timer {
     /// Start timer relative
-    pub fn start(&self, timeout: &Duration) -> Result<(), i32> {
+    pub fn start(&self, timeout: &Duration) -> Result<(), Error> {
 	let t = raw::gensio_time{ secs: timeout.as_secs() as i64,
 				  nsecs: timeout.subsec_nanos() as i32 };
 	let err = unsafe {
@@ -671,7 +673,7 @@ impl Timer {
 	};
 	match err {
 	    0 => Ok(()),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
@@ -679,27 +681,27 @@ impl Timer {
     // but could be added.
 
     /// Stop a timer.
-    pub fn stop(&self) -> Result<(), i32> {
+    pub fn stop(&self) -> Result<(), Error> {
 	let err = unsafe {
 	    raw::gensio_os_funcs_stop_timer((*self.d).o.o, self.t)
 	};
 	match err {
 	    0 => Ok(()),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 
     /// Stop a timer and call a callback when the stop completes.
     pub fn stop_with_done(&self, cb: Weak<dyn TimerStopDoneHandler>)
-			  -> Result<(), i32> {
+			  -> Result<(), Error> {
 	unsafe {
 	    let _guard = (*self.d).m.lock().unwrap();
 
 	    if (*self.d).freed {
-		return Err(crate::GE_NOTREADY)
+		return Err(Error::NotReady)
 	    }
 	    if (*self.d).stopping {
-		return Err(crate::GE_INUSE)
+		return Err(Error::InUse)
 	    }
 	    let d = Box::new(TimerStopData { cb, d: self.d });
 	    let d = Box::into_raw(d);
@@ -715,7 +717,7 @@ impl Timer {
 		}
 		_ => {
 		    drop(Box::from_raw(d));
-		    Err(err)
+		    Err(val_to_error(err))
 		}
 	    }
 	}
@@ -741,8 +743,8 @@ impl Drop for Timer {
 		let err = raw::gensio_os_funcs_stop_timer_with_done
 		    ((*self.d).o.o, self.t,
 		     timer_freed_handler, self.d as *mut ffi::c_void);
-		match err {
-		    crate::GE_TIMEDOUT => { // Timer is not running
+		match val_to_error(err) {
+		    Error::TimedOut => { // Timer is not running
 			if (*self.d).stopping {
 			    // Stop done handler is pending and still
 			    // hasn't run, so make sure it does the
@@ -751,12 +753,12 @@ impl Drop for Timer {
 			    do_wait = true;
 			}
 		    }
-		    0 => {
+		    Error::NoErr => {
 			// Timer was running and is now stopped, the
 			// stop done handler will be called.
 			do_wait = true;
 		    }
-		    crate::GE_INUSE => {
+		    Error::InUse => {
 			// Timer has a stop done handler pending, set
 			// it up to wake us when done.
 			(*self.d).freed = true;
@@ -813,13 +815,13 @@ extern "C" fn runner_handler(r: *const raw::gensio_runner,
 
 impl Runner {
     /// Run the runner
-    pub fn run(&self) -> Result<(), i32> {
+    pub fn run(&self) -> Result<(), Error> {
 	let err = unsafe {
 	    raw::gensio_os_funcs_run((*self.d).o.o, self.r)
 	};
 	match err {
 	    0 => Ok(()),
-	    _ => Err(err)
+	    _ => Err(val_to_error(err))
 	}
     }
 }
@@ -855,7 +857,7 @@ mod tests {
 	let w = o.new_waiter().expect("Couldn't allocate Waiter");
 
 	drop(o);
-	assert_eq!(w.wait(1, Some(&Duration::new(0, 0))), Err(crate::GE_TIMEDOUT));
+	assert_eq!(w.wait(1, Some(&Duration::new(0, 0))), Err(Error::TimedOut));
     }
 
     struct HandleTimeout1 {
@@ -885,7 +887,7 @@ mod tests {
 
 	match h.w.wait(1, Some(&Duration::new(1, 0))) {
 	    Ok(_) => (),
-	    Err(e) => assert!(e == 0)
+	    Err(e) => panic!("Wait failed: {}", e)
 	}
     }
 
@@ -949,7 +951,7 @@ mod tests {
 	t.stop_with_done(Arc::downgrade(&s) as _).expect("Couldn't stop timer");
 	match s.w.wait(1, Some(&Duration::new(1, 0))) {
 	    Ok(_) => (),
-	    Err(e) => assert!(e == 0)
+	    Err(e) => panic!("Wait failed: {}", e)
 	}
         let vv = s.v.lock().unwrap();
         assert_eq!(*vv, 10);
@@ -1037,13 +1039,13 @@ mod tests {
         let mut count = 0;
         loop {
 	    let rv = h.w.wait(1, Some(&Duration::new(1, 0)));
-            if rv == Err(crate::GE_TIMEDOUT) && count == 0 {
+            if rv == Err(Error::TimedOut) && count == 0 {
                 count += 1;
                 continue;
             }
             match rv {
-	        Ok(_) => (),
-	        Err(e) => assert!(e == 0)
+	        Ok(_) => (), 
+	        Err(e) => panic!("Wait failed {}", e)
             }
             break;
 	};
@@ -1077,13 +1079,13 @@ mod tests {
         let mut count = 0;
         loop {
 	    let rv = h.w.wait(1, Some(&Duration::new(1, 0)));
-            if rv == Err(crate::GE_TIMEDOUT) && count == 0 {
+            if rv == Err(Error::TimedOut) && count == 0 {
                 count += 1;
                 continue;
             }
             match rv {
 	        Ok(_) => (),
-	        Err(e) => assert!(e == 0)
+	        Err(e) => panic!("Wait failed {}", e)
             }
             break;
 	};
@@ -1125,13 +1127,13 @@ mod tests {
         let mut count = 0;
         loop {
 	    let rv = h.w.wait(1, Some(&Duration::new(1, 0)));
-            if rv == Err(crate::GE_TIMEDOUT) && count == 0 {
+            if rv == Err(Error::TimedOut) && count == 0 {
                 count += 1;
                 continue;
             }
             match rv {
 	        Ok(_) => (),
-	        Err(e) => assert!(e == 0)
+	        Err(e) => panic!("Wait failed {}", e)
             }
             break;
 	};
@@ -1166,7 +1168,7 @@ mod tests {
 
 	match h.w.wait(1, Some(&Duration::new(1, 0))) {
 	    Ok(_) => (),
-	    Err(e) => assert!(e == 0)
+	    Err(e) => panic!("Wait failed: {}", e)
 	}
     }
 }

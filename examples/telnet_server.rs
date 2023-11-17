@@ -10,6 +10,7 @@ use std::env;
 use std::sync::Mutex;
 use std::sync::Arc;
 use gensio;
+use gensio::Error;
 use gensio::osfuncs;
 
 struct TelnetReflectorInstList {
@@ -60,22 +61,20 @@ impl TelnetReflectorInst {
 }
 
 impl gensio::Event for TelnetReflectorInst {
-    fn err(&self, err: i32) -> i32 {
-	println!("Error writing to gensio: {}",
-		 gensio::err_to_str(err));
+    fn err(&self, err: Error) -> Error {
+	println!("Error writing to gensio: {}", err);
 	self.shutdown();
-        0
+        Error::NoErr
     }
 
-    fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
-            -> (i32, usize) {
+    fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>) -> (Error, usize) {
 	match self.g.write(buf, None) {
 	    Ok(len) => {
 		if (len as usize) < buf.len() {
 		    self.g.read_enable(false);
 		    self.g.write_enable(true);
 		}
-		(0, (len as u64).try_into().unwrap())
+		(Error::NoErr, (len as u64).try_into().unwrap())
 	    }
 	    Err(err) => {
 		self.shutdown();
@@ -86,10 +85,10 @@ impl gensio::Event for TelnetReflectorInst {
 	}
     }
 
-    fn write_ready(&self) -> i32 {
+    fn write_ready(&self) -> Error {
         self.g.read_enable(true);
         self.g.write_enable(false);
-        0
+        Error::NoErr
     }
 
     fn baud(&self, baud: u32) {
@@ -274,7 +273,7 @@ struct TelnetReflector {
 impl gensio::AccepterEvent for TelnetReflector {
     // No need for parmlog, InitialTelnetReflectorEv handled that.
 
-    fn new_connection(&self, g: gensio::Gensio) -> i32 {
+    fn new_connection(&self, g: gensio::Gensio) -> Error {
 	let mut list = self.list.list.lock().unwrap();
 
 	let d = TelnetReflectorInstData { ..Default::default() };
@@ -284,7 +283,7 @@ impl gensio::AccepterEvent for TelnetReflector {
 	inst.g.set_handler(Arc::downgrade(&inst) as _);
 	inst.g.read_enable(true);
 	list.push(inst);
-	0
+	Error::NoErr
     }
 }
 
@@ -299,13 +298,13 @@ impl gensio::AccepterEvent for InitialTelnetReflectorEv {
     }
 
     // Refuse connections until we are ready.
-    fn new_connection(&self, _g: gensio::Gensio) -> i32 {
-        gensio::GE_NOTSUP
+    fn new_connection(&self, _g: gensio::Gensio) -> Error {
+        gensio::Error::NotSup
     }
 }
 
 fn new_telnet_reflector(o: &osfuncs::OsFuncs, port: &str)
-			-> Result<Arc<TelnetReflector>, i32> {
+			-> Result<Arc<TelnetReflector>, Error> {
     let mut astr = "telnet(rfc2217),tcp,localhost,0".to_string();
     astr.push_str(port);
     let ae = Arc::new(InitialTelnetReflectorEv{});
