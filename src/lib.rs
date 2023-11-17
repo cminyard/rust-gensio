@@ -326,11 +326,11 @@ pub trait Event {
 	GE_NOTSUP
     }
 
-    fn postcert_verify(&self, _err: i32, _errstr: &Option<String>) -> i32 {
+    fn postcert_verify(&self, _err: i32, _errstr: Option<&str>) -> i32 {
 	GE_NOTSUP
     }
 
-    fn password_verify(&self, _passwd: &String) -> i32 {
+    fn password_verify(&self, _passwd: &str) -> i32 {
 	GE_NOTSUP
     }
 
@@ -439,15 +439,19 @@ impl std::fmt::Debug for Gensio {
     }
 }
 
+/// # Safety
+///
 /// Convert an auxdata, like from a read call, to a vector of strings.
-pub fn auxtovec(auxdata: *const *const ffi::c_char) -> Option<Vec<String>> {
-    if auxdata == std::ptr::null() {
+/// You must make sure that auxdata is valid.
+pub unsafe fn auxtovec(auxdata: *const *const ffi::c_char)
+		       -> Option<Vec<String>> {
+    if auxdata.is_null() {
 	None
     } else {
 	let sl = unsafe { std::slice::from_raw_parts(auxdata, 10000) };
 	let mut i = 0;
 	let mut v: Vec<String> = Vec::new();
-	while sl[i] != std::ptr::null() {
+	while !sl[i].is_null() {
 	    let cs = unsafe { ffi::CStr::from_ptr(sl[i]) };
 	    v.push(cs.to_str().expect("Invalid string").to_string());
 	    i += 1;
@@ -466,7 +470,7 @@ pub fn auxvectostrvec(a: &Option<Vec<String>>) -> Option<Vec<&str>> {
 	Some(a) =>  {
 	    let mut r: Vec<&str> = Vec::new();
 	    for i in a {
-		r.push(&i)
+		r.push(i)
 	    }
 	    Some(r)
 	}
@@ -487,7 +491,7 @@ pub fn vectoaux(vi: &[&str]) -> Result<Vec<*mut ffi::c_char>, i32> {
 	};
 	vo.push(ffi::CString::into_raw(cs));
     }
-    return Ok(vo);
+    Ok(vo)
 }
 
 // Free the value returned by vectoaux().
@@ -533,7 +537,7 @@ fn new_gensio(o: &osfuncs::OsFuncs, g: *const raw::gensio,
 	Some(d) => d,
 	None => Box::into_raw(Box::new(new_gensio_data(o, cb, state)?))
     };
-    Ok(Gensio { g: g, d: d })
+    Ok(Gensio { g, d })
 }
 
 fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
@@ -552,7 +556,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
     match event {
 	raw::GENSIO_EVENT_LOG => {
 	    let s = unsafe { raw::gensio_loginfo_to_str(buf) };
-	    if s != std::ptr::null_mut() {
+	    if !s.is_null() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
 		cb.log(logstr);
@@ -562,7 +566,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	}
 	raw::GENSIO_EVENT_PARMLOG => {
 	    let s = unsafe { raw::gensio_parmlog_to_str(buf) };
-	    if s != std::ptr::null_mut() {
+	    if !s.is_null() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
 		cb.parmlog(logstr);
@@ -582,12 +586,9 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	    let b = unsafe {
 		std::slice::from_raw_parts(buf as *mut u8, *buflen as usize)
 	    };
-	    let a = auxtovec(auxdata);
+	    let a = unsafe { auxtovec(auxdata) };
 	    let a2 = auxvectostrvec(&a);
-	    let a3 = match &a2 {
-		None => None,
-		Some(t) => Some(t.as_slice())
-	    };
+	    let a3 = a2.as_deref();
 	    let count;
 	    (err, count) = cb.read(b, a3);
 	    unsafe { *buflen = count as GensioDS; }
@@ -611,12 +612,9 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		raw::gensio_set_callback(new_g.g, evhndl,
                                          new_g.d as *mut ffi::c_void);
 	    }
-	    let a = auxtovec(auxdata);
+	    let a = unsafe { auxtovec(auxdata) };
 	    let a2 = auxvectostrvec(&a);
-	    let a3 = match &a2 {
-		None => None,
-		Some(t) => Some(t.as_slice())
-	    };
+	    let a3 = a2.as_deref();
 	    err = cb.new_channel(new_g, a3);
 	}
 	raw::GENSIO_EVENT_SEND_BREAK => {
@@ -630,21 +628,21 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	}
 	raw::GENSIO_EVENT_POSTCERT_VERIFY => {
 	    let errstr = {
-		if auxdata == std::ptr::null() {
+		if auxdata.is_null() {
 		    None
 		} else {
 		    let sl = unsafe { std::slice::from_raw_parts(auxdata,
 								 10000) };
 		    let cs = unsafe { ffi::CStr::from_ptr(sl[0]) };
-		    Some(cs.to_str().expect("Invalid string").to_string())
+		    Some(cs.to_str().expect("Invalid string"))
 		}
 	    };
-	    err = cb.postcert_verify(ierr, &errstr);
+	    err = cb.postcert_verify(ierr, errstr);
 	}
 	raw::GENSIO_EVENT_PASSWORD_VERIFY => {
 	    let cs = unsafe { ffi::CStr::from_ptr(buf as *const ffi::c_char) };
-	    let s = cs.to_str().expect("Invalid string").to_string();
-	    err = cb.password_verify(&s);
+	    let s = cs.to_str().expect("Invalid string");
+	    err = cb.password_verify(s);
 	}
 	raw::GENSIO_EVENT_REQUEST_PASSWORD => {
 	    let s;
@@ -667,9 +665,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 			let dst = unsafe {
 			    std::slice::from_raw_parts_mut(dst, maxlen)
 			};
-			for i in 0 .. len {
-			    dst[i] = src[i];
-			}
+			dst[..len].copy_from_slice(&src[..len]);
 			unsafe { *buflen = len as GensioDS; }
 		    }
 		}
@@ -693,9 +689,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
             }
 	    let dst = dst as *mut u8;
 	    let dst = unsafe {std::slice::from_raw_parts_mut(dst, len) };
-	    for i in 0 .. len {
-		dst[i] = src[i];
-	    }
+	    dst[..len].copy_from_slice(&src[..len]);
 	    unsafe {
                 *buflen = len as GensioDS;
             }
@@ -713,7 +707,7 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		Vec::from_raw_parts(data, *buflen as usize, *buflen as usize)
 	    };
 	    let str = String::from_utf8_lossy(&data);
-	    let str: Vec<&str> = str.split(":").collect();
+	    let str: Vec<&str> = str.split(':').collect();
 	    if str.len() >= 2 {
 		let height: u32 = str[0].parse().unwrap();
 		let width: u32 = str[1].parse().unwrap();
@@ -722,22 +716,22 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	}
 	raw::GENSIO_EVENT_SER_MODEMSTATE => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.modemstate(data);
 	}
 	raw::GENSIO_EVENT_SER_LINESTATE => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.linestate(data);
 	}
 	raw::GENSIO_EVENT_SER_MODEMSTATE_MASK => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.modemstate_mask(data);
 	}
 	raw::GENSIO_EVENT_SER_LINESTATE_MASK => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.linestate_mask(data);
 	}
 	raw::GENSIO_EVENT_SER_SIGNATURE => {
@@ -749,13 +743,13 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	}
 	raw::GENSIO_EVENT_SER_FLOW_STATE => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    let data = data == 1;
 	    cb.flow_state(data);
 	}
 	raw::GENSIO_EVENT_SER_FLUSH => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.flush(data);
 	}
 	raw::GENSIO_EVENT_SER_SYNC => {
@@ -763,47 +757,47 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 	}
 	raw::GENSIO_EVENT_SER_BAUD => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.baud(data);
 	}
 	raw::GENSIO_EVENT_SER_DATASIZE => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.datasize(data);
 	}
 	raw::GENSIO_EVENT_SER_PARITY => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.parity(data);
 	}
 	raw::GENSIO_EVENT_SER_STOPBITS => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.stopbits(data);
 	}
 	raw::GENSIO_EVENT_SER_FLOWCONTROL => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.flowcontrol(data);
 	}
 	raw::GENSIO_EVENT_SER_IFLOWCONTROL => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.iflowcontrol(data);
 	}
 	raw::GENSIO_EVENT_SER_SBREAK => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.sbreak(data);
 	}
 	raw::GENSIO_EVENT_SER_DTR => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.dtr(data);
 	}
 	raw::GENSIO_EVENT_SER_RTS => {
 	    let data = buf as *const ffi::c_uint;
-	    let data = unsafe { *data } as u32;
+	    let data = unsafe { *data };
 	    cb.rts(data);
 	}
 	_ => err = GE_NOTSUP
@@ -845,24 +839,22 @@ pub fn new(s: &str, o: &osfuncs::OsFuncs, cb: Weak<dyn Event>)
 	raw::str_to_gensio(s.as_ptr(), o.raw(), evhndl,
 			   gd as *mut ffi::c_void, &g)
     };
-    let rv = match err {
+    match err {
 	0 => {
-	    let new_g = match new_gensio(&o.clone(), g, cb.clone(),
-					 GensioState::Closed, Some(gd)) {
+	    Ok(match new_gensio(&o.clone(), g, cb.clone(),
+				GensioState::Closed, Some(gd)) {
 		Ok(g) => g,
 		Err(e) => {
 		    unsafe { raw::gensio_free(g); }
 		    return Err(e);
 		}
-	    };
-	    Ok(new_g)
+	    })
 	}
 	_ => {
 	    unsafe { drop(Box::from_raw(gd)) }; // Free our original box
 	    Err(err)
 	}
-    };
-    rv
+    }
 }
 
 fn duration_to_gensio_time(t: &mut osfuncs::raw::gensio_time,
@@ -974,7 +966,7 @@ impl Gensio {
 	let mut count: GensioDS = 0;
 	let a1 = match auxdata {
 	    None => None,
-	    Some(ref v) => Some(vectoaux(v)?)
+	    Some(v) => Some(vectoaux(v)?)
 	};
 	let a2: *mut *mut ffi::c_char = match a1 {
 	    None => std::ptr::null_mut(),
@@ -1132,14 +1124,14 @@ impl Gensio {
 
     /// Call gensio_control() and return a vector holding the result.
     pub fn control_resize(&self, depth: i32, get: bool, option: u32,
-			  data: &Vec<u8>) -> Result<Vec<u8>, i32> {
+			  data: &[u8]) -> Result<Vec<u8>, i32> {
 	let mut len: usize;
-	let mut data2 = data.clone();
+	let mut data2 = data.to_vec();
 	len = self.control(depth, get, option, &mut data2)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
-	let mut data2 = data.clone();
+	let mut data2 = data.to_vec();
 	data2.reserve(len + 1); // Add 1 for C string terminator
 	len = self.control(depth, get, option, &mut data2)?;
 	if len >= data2.capacity() {
@@ -1153,8 +1145,8 @@ impl Gensio {
     /// string is returned in Ok().
     pub fn control_str(&self, depth: i32, get: bool, option: u32, val: &str)
 		       -> Result<String, i32> {
-	let mut valv = to_term_str_bytes(val);
-	match self.control_resize(depth, get, option, &mut valv) {
+	let valv = to_term_str_bytes(val);
+	match self.control_resize(depth, get, option, &valv) {
 	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
 	    Err(err) => Err(err)
 	}
@@ -1182,7 +1174,7 @@ impl Gensio {
 	match err {
 	    0 => Ok(()),
 	    _ => {
-		if d != std::ptr::null_mut() {
+		if !d.is_null() {
 		    unsafe { drop(Box::from_raw(d)); } // Free the data
 		}
 		Err(err)
@@ -1236,16 +1228,16 @@ impl Gensio {
 
     /// Like acontrol_s, but resize return the result in a new vector.
     pub fn acontrol_resize_s(&self, depth: i32, get: bool, option: u32,
-			     data: &Vec<u8>,
+			     data: &[u8],
 			     timeout: Option<&Duration>)
 			     -> Result<Vec<u8>, i32> {
 	let mut len: usize;
-	let mut data2 = data.clone();
+	let mut data2 = data.to_vec();
 	len = self.acontrol_s(depth, get, option, &mut data2, timeout)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
-	let mut data2 = data.clone();
+	let mut data2 = data.to_vec();
 	data2.reserve(len + 1); // Add 1 for C string terminator
 	len = self.acontrol_s(depth, get, option, &mut data2, timeout)?;
 	if len >= data2.capacity() {
@@ -1260,8 +1252,8 @@ impl Gensio {
     pub fn acontrol_str_s(&self, depth: i32, get: bool, option: u32, val: &str,
 			  timeout: Option<&Duration>)
 			  -> Result<String, i32> {
-	let mut valv = to_term_str_bytes(val);
-	match self.acontrol_resize_s(depth, get, option, &mut valv, timeout) {
+	let valv = to_term_str_bytes(val);
+	match self.acontrol_resize_s(depth, get, option, &valv, timeout) {
 	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
 	    Err(err) => Err(err)
 	}
@@ -1301,16 +1293,16 @@ impl Gensio {
 
     /// Like acontrol_intr_s, but resize return the result in a new vector.
     pub fn acontrol_resize_s_intr(&self, depth: i32, get: bool, option: u32,
-				  data: &Vec<u8>,
+				  data: &[u8],
 				  timeout: Option<&Duration>)
 				  -> Result<Vec<u8>, i32> {
 	let mut len: usize;
-	let mut data2 = data.clone();
+	let mut data2 = data.to_vec();
 	len = self.acontrol_s_intr(depth, get, option, &mut data2, timeout)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
-	let mut data2 = data.clone();
+	let mut data2 = data.to_vec();
 	data2.reserve(len + 1); // Add 1 for C string terminator
 	len = self.acontrol_s_intr(depth, get, option, &mut data2, timeout)?;
 	if len >= data2.capacity() {
@@ -1325,8 +1317,8 @@ impl Gensio {
     pub fn acontrol_str_s_intr(&self, depth: i32, get: bool, option: u32,
 			       val: &str, timeout: Option<&Duration>)
 			       -> Result<String, i32> {
-	let mut valv = to_term_str_bytes(val);
-	match self.acontrol_resize_s_intr(depth, get, option, &mut valv,
+	let valv = to_term_str_bytes(val);
+	match self.acontrol_resize_s_intr(depth, get, option, &valv,
 					  timeout) {
 	    Ok(newv) => Ok(String::from_utf8_lossy(&newv).to_string()),
 	    Err(err) => Err(err)
@@ -1476,12 +1468,12 @@ pub trait AccepterEvent {
     }
 
     /// See gensio_event.3, GENSIO_EVENT_POSTCERT_VERIFY.
-    fn postcert_verify(&self, _err: i32, _errstr: &Option<String>) -> i32 {
+    fn postcert_verify(&self, _err: i32, _errstr: Option<&str>) -> i32 {
 	GE_NOTSUP
     }
 
     /// See gensio_event.3, GENSIO_EVENT_PASSWORD_VERIFY.
-    fn password_verify(&self, _passwd: &String) -> i32 {
+    fn password_verify(&self, _passwd: &str) -> i32 {
 	GE_NOTSUP
     }
 
@@ -1538,7 +1530,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
     match event {
 	raw::GENSIO_ACC_EVENT_LOG => {
 	    let s = unsafe { raw::gensio_loginfo_to_str(data) };
-	    if s != std::ptr::null_mut() {
+	    if !s.is_null() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
 		cb.log(logstr);
@@ -1548,7 +1540,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	}
 	raw::GENSIO_ACC_EVENT_PARMLOG => {
 	    let s = unsafe { raw::gensio_parmlog_to_str(data) };
-	    if s != std::ptr::null_mut() {
+	    if !s.is_null() {
 		let cs = unsafe { ffi::CStr::from_ptr(s) };
 		let logstr = cs.to_str().expect("Invalid string").to_string();
 		cb.parmlog(logstr);
@@ -1583,20 +1575,20 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	raw::GENSIO_ACC_EVENT_POSTCERT_VERIFY => {
 	    let vd = data as *const raw::gensio_acc_postcert_verify_data;
 	    let errstr = {
-		if unsafe {(*vd).errstr } == std::ptr::null() {
+		if unsafe {(*vd).errstr }.is_null() {
 		    None
 		} else {
 		    let cs = unsafe { ffi::CStr::from_ptr((*vd).errstr) };
-		    Some(cs.to_str().expect("Invalid string").to_string())
+		    Some(cs.to_str().expect("Invalid string"))
 		}
 	    };
-	    err = cb.postcert_verify(unsafe { (*vd).err }, &errstr);
+	    err = cb.postcert_verify(unsafe { (*vd).err }, errstr);
 	}
 	raw::GENSIO_ACC_EVENT_PASSWORD_VERIFY => {
 	    let vd = data as *const raw::gensio_acc_password_verify_data;
 	    let cs = unsafe { ffi::CStr::from_ptr((*vd).password) };
-	    let s = cs.to_str().expect("Invalid string").to_string();
-	    err = cb.password_verify(&s);
+	    let s = cs.to_str().expect("Invalid string");
+	    err = cb.password_verify(s);
 	}
 	raw::GENSIO_ACC_EVENT_REQUEST_PASSWORD => {
 	    let vd = data as *mut raw::gensio_acc_password_verify_data;
@@ -1620,9 +1612,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 			let dst = unsafe {
 			    std::slice::from_raw_parts_mut(dst, maxlen)
 			};
-			for i in 0 .. len {
-			    dst[i] = src[i];
-			}
+			dst[..len].copy_from_slice(&src[..len]);
 			unsafe { (*vd).password_len = len as GensioDS; }
 		    }
 		}
@@ -1653,9 +1643,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    }
 	    let dst = unsafe { (*vd).password as *mut u8 };
 	    let dst = unsafe {std::slice::from_raw_parts_mut(dst, len) };
-	    for i in 0 .. len {
-		dst[i] = src[i];
-	    }
+	    dst[..len].copy_from_slice(&src[..len]);
 	    unsafe {(*vd).password_len = len as GensioDS; }
 	}
 	_ => { err = GE_NOTSUP; }
@@ -1699,16 +1687,15 @@ pub fn new_accepter(s: &str, o: &osfuncs::OsFuncs,
 	raw::str_to_gensio_accepter(s.as_ptr(), o.raw(), acc_evhndl,
 				    dt as *mut ffi::c_void, &a)
     };
-    let rv = match err {
+    match err {
 	0 => {
-	    Ok(Accepter { a: a, d: dt })
+	    Ok(Accepter { a, d: dt })
 	}
 	_ => {
             let _dt = unsafe {Box::from_raw(dt) }; // Free our original box
             Err(err)
         }
-    };
-    rv
+    }
 }
 
 /// Shutdown callbacks will need to implement this trait.
@@ -1851,14 +1838,14 @@ impl Accepter {
 
     /// Call gensio_acc_control() and return a vector holding the result.
     pub fn control_resize(&self, depth: i32, get: bool, option: u32,
-			  data: &Vec<u8>) -> Result<Vec<u8>, i32> {
+			  data: &[u8]) -> Result<Vec<u8>, i32> {
 	let mut len: usize;
-	let mut data2 = data.clone();
+	let mut data2 = data.to_vec();
 	len = self.control(depth, get, option, &mut data2)?;
 	if len <= data2.capacity() {
 	    return Ok(data2);
 	}
-	let mut data2 = data.clone();
+	let mut data2 = data.to_vec();
 	data2.reserve(len + 1);
 	len = self.control(depth, get, option, &mut data2)?;
 	if len >= data2.capacity() {
@@ -1872,8 +1859,8 @@ impl Accepter {
     /// string is returned in Ok().
     pub fn control_str(&self, depth: i32, get: bool, option: u32, val: &str)
 		       -> Result<String, i32> {
-	let mut valv = val.as_bytes().to_vec();
-	let rv = self.control_resize(depth, get, option, &mut valv)?;
+	let valv = val.as_bytes().to_vec();
+	let rv = self.control_resize(depth, get, option, &valv)?;
 	Ok(String::from_utf8_lossy(&rv).to_string())
     }
 
@@ -2197,7 +2184,7 @@ mod tests {
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
-	let e = Arc::new(AccEvent { w: w, d: d });
+	let e = Arc::new(AccEvent { w: w, d });
 
 	{
 	    let mut d = e.d.lock().unwrap();
@@ -2223,7 +2210,7 @@ mod tests {
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
-	let e1 = Arc::new(AccEvent { w: w, d: d });
+	let e1 = Arc::new(AccEvent { w: w, d });
 	let a = new_accepter("tcp,127.0.0.1,0", &o,
 			     Arc::downgrade(&e1) as _)
 	    .expect("Couldn't allocate accepter");
@@ -2236,7 +2223,7 @@ mod tests {
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
-	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
+	let e2 = Arc::new(GenEvent { w: w, _g: None, d });
 	let g = new(&format!("tcp,127.0.0.1,{port}"), &o,
 		    Arc::downgrade(&e2) as _)
 	    .expect("Couldn't alocate gensio");
@@ -2256,7 +2243,7 @@ mod tests {
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
-	let e1 = Arc::new(AccEvent { w: w, d: d });
+	let e1 = Arc::new(AccEvent { w: w, d });
 	let e1w = Arc::downgrade(&e1);
 	let a = new_accepter("tcp,127.0.0.1,0", &o, e1w.clone())
 	    .expect("Couldn't allocate accepter");
@@ -2269,7 +2256,7 @@ mod tests {
 
 	let w = o.new_waiter().expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: 0 });
-	let e2 = Arc::new(GenEvent { w: w, _g: None, d: d });
+	let e2 = Arc::new(GenEvent { w: w, _g: None, d });
 	let g = new(&format!("tcp,127.0.0.1,{port}"), &o,
 		    Arc::downgrade(&e2) as _).
 	    expect("Couldn't alocate gensio");
@@ -2283,7 +2270,7 @@ mod tests {
 	    let w = o.new_waiter().expect("Couldn't allocate waiter");
 	    let d = Mutex::new(GenMutData { logstr: None,
 					    experr: GE_REMCLOSE });
-	    e3 = Arc::new(GenEvent { w: w, _g: None, d: d });
+	    e3 = Arc::new(GenEvent { w: w, _g: None, d });
 	    let d1 = e1.d.lock().unwrap();
 	    match &d1.ag {
 		None => assert!(false),

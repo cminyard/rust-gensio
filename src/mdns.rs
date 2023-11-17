@@ -23,7 +23,7 @@ pub fn new(o: &osfuncs::OsFuncs) -> Result<MDNS, i32> {
     if rv != 0 {
 	return Err(rv)
     }
-    Ok(MDNS { o: o.clone(), m: m, closed: Mutex::new(false) })
+    Ok(MDNS { o: o.clone(), m, closed: Mutex::new(false) })
 }
 
 struct MDNSDoneData {
@@ -53,12 +53,23 @@ extern "C" fn mdns_done(m: *const raw::gensio_mdns,
     });
 }
 
-fn optstr_to_cstr(s: Option<&str>)
+/// Specify information about an MDNS watch or service, all the names
+/// and such.
+pub struct MDNSSpec {
+    iface: i32,
+    ipdomain: i32,
+    name: Option<String>,
+    mtype: Option<String>,
+    domain: Option<String>,
+    host: Option<String>,
+}
+
+fn optstr_to_cstr(s: &Option<String>)
 		  -> Result<(*const ffi::c_char, Option<CString>), i32> {
     match s {
 	None => Ok((std::ptr::null(), None)),
 	Some(s) => {
-	    match ffi::CString::new(s) {
+	    match ffi::CString::new(s.as_str()) {
 		Ok(s) => Ok((s.as_ptr(), Some(s))),
 		Err(_) => Err(crate::GE_INVAL)
 	    }
@@ -85,9 +96,7 @@ impl MDNS {
 	Ok(())
     }
 
-    pub fn new_service(&self, iface: i32, ipdomain: i32,
-		       name: Option<&str>, mtype: Option<&str>,
-		       domain: Option<&str>, host: Option<&str>,
+    pub fn new_service(&self, spec: &MDNSSpec,
 		       port: i32, txt: Option<&[&str]>,
 		       cb: Weak<dyn ServiceEvent>)
 		       -> Result<Service, i32> {
@@ -99,21 +108,21 @@ impl MDNS {
 	let sd = Box::new(ServiceData { _o: self.o.clone(), cb });
 	let sd = Box::into_raw(sd);
 	let s: *const raw::gensio_mdns_service = std::ptr::null();
-	let (namep, _nameh) = optstr_to_cstr(name)?;
-	let (typep, _typeh) = optstr_to_cstr(mtype)?;
-	let (domainp, _domainh) = optstr_to_cstr(domain)?;
-	let (hostp, _hosth) = optstr_to_cstr(host)?;
+	let (namep, _nameh) = optstr_to_cstr(&spec.name)?;
+	let (typep, _typeh) = optstr_to_cstr(&spec.mtype)?;
+	let (domainp, _domainh) = optstr_to_cstr(&spec.domain)?;
+	let (hostp, _hosth) = optstr_to_cstr(&spec.host)?;
 	let txt1 = match txt {
 	    None => None,
-	    Some(ref v) => Some(crate::vectoaux(v)?)
+	    Some(v) => Some(crate::vectoaux(v)?)
 	};
 	let txt2: *mut *mut ffi::c_char = match txt1 {
 	    None => std::ptr::null_mut(),
 	    Some(ref v) => v.as_ptr() as *mut *mut ffi::c_char
 	};
 	let err = unsafe {
-	    raw::gensio_mdns_add_service2(self.m, iface as ffi::c_int,
-					  ipdomain as ffi::c_int,
+	    raw::gensio_mdns_add_service2(self.m, spec.iface as ffi::c_int,
+					  spec.ipdomain as ffi::c_int,
 					  namep, typep, domainp, hostp,
 					  port as ffi::c_int,
 					  txt2 as *const *const ffi::c_char,
@@ -125,13 +134,11 @@ impl MDNS {
 	    unsafe { drop(Box::from_raw(sd)) };
 	    return Err(err);
 	}
-	Ok(Service { s: s, _d: sd })
+	Ok(Service { s, _d: sd })
     }
 
-    pub fn new_watch(&self, iface: i32, ipdomain: i32,
-		     name: Option<&str>, mtype: Option<&str>,
-		     domain: Option<&str>, host: Option<&str>,
-		     cb: Weak<dyn WatchEvent>) -> Result<Watch, i32> {
+    pub fn new_watch(&self, spec: &MDNSSpec, cb: Weak<dyn WatchEvent>)
+		     -> Result<Watch, i32> {
 	let closed = self.closed.lock().unwrap();
 	if *closed {
 	    return Err(crate::GE_NOTREADY);
@@ -145,13 +152,13 @@ impl MDNS {
 	});
 	let wd = Box::into_raw(wd);
 	let w: *const raw::gensio_mdns_watch = std::ptr::null();
-	let (namep, _nameh) = optstr_to_cstr(name)?;
-	let (typep, _typeh) = optstr_to_cstr(mtype)?;
-	let (domainp, _domainh) = optstr_to_cstr(domain)?;
-	let (hostp, _hosth) = optstr_to_cstr(host)?;
+	let (namep, _nameh) = optstr_to_cstr(&spec.name)?;
+	let (typep, _typeh) = optstr_to_cstr(&spec.mtype)?;
+	let (domainp, _domainh) = optstr_to_cstr(&spec.domain)?;
+	let (hostp, _hosth) = optstr_to_cstr(&spec.host)?;
 	let err = unsafe {
-	    raw::gensio_mdns_add_watch(self.m, iface as ffi::c_int,
-				       ipdomain as ffi::c_int,
+	    raw::gensio_mdns_add_watch(self.m, spec.iface as ffi::c_int,
+				       spec.ipdomain as ffi::c_int,
 				       namep, typep, domainp, hostp,
 				       watch_event, wd as *mut ffi::c_void,
 				       &w)
@@ -160,12 +167,12 @@ impl MDNS {
 	    unsafe { drop(Box::from_raw(wd)) };
 	    return Err(err);
 	}
-	Ok(Watch { w: w, d: wd })
+	Ok(Watch { w, d: wd })
     }
 }
 
 fn cstrptr_to_optstring(cstr: *const ffi::c_char) -> Option<String> {
-    if cstr == std::ptr::null() {
+    if cstr.is_null() {
 	None
     } else {
 	let cs = unsafe { ffi::CStr::from_ptr(cstr) };
@@ -174,7 +181,7 @@ fn cstrptr_to_optstring(cstr: *const ffi::c_char) -> Option<String> {
     }
 }
 
-fn optstring_to_optstr<'a>(s: &'a Option<String>) -> Option<&'a str> {
+fn optstring_to_optstr(s: &Option<String>) -> Option<&str> {
     match s {
 	None => None,
 	Some(s) => Some(s.as_str())
@@ -213,7 +220,7 @@ fn i_service_event(_s: *const raw::gensio_mdns_service,
     let infos = optstring_to_optstr(&infosstr);
     match unsafe { (*d).cb.upgrade() } {
 	None => (),
-	Some(cb) => cb.event(event as i32, infos)
+	Some(cb) => cb.event(event, infos)
     }
     if event == GENSIO_MDNS_SERVICE_REMOVED {
 	unsafe { drop(Box::from_raw(d)) };
@@ -298,12 +305,7 @@ pub const GENSIO_MDNS_WATCH_ALL_FOR_NOW: i32 = 2;
 pub trait WatchEvent {
     fn watch(&self,
 	     state: i32,
-	     iface: i32,
-	     ipdomain: i32,
-	     name: Option<&str>,
-	     mtype: Option<&str>,
-	     domain: Option<&str>,
-	     host:  Option<&str>,
+	     spec: &MDNSSpec,
 	     addr: Option<addr::Addr>,
 	     txt: Option<&[&str]>);
 }
@@ -327,14 +329,18 @@ pub struct Watch {
     d: *mut WatchData,
 }
 
+struct IMDNSSpec {
+    iface: ffi::c_int,
+    ipdomain: ffi::c_int,
+    name: *const ffi::c_char,
+    mtype: *const ffi::c_char,
+    domain: *const ffi::c_char,
+    host: *const ffi::c_char,
+}
+
 fn i_watch_event(_w: *const raw::gensio_mdns_watch,
 		 state: ffi::c_int,
-		 iface: ffi::c_int,
-		 ipdomain: ffi::c_int,
-		 name: *const ffi::c_char,
-		 mtype: *const ffi::c_char,
-		 domain: *const ffi::c_char,
-		 host: *const ffi::c_char,
+		 spec: &IMDNSSpec,
 		 addr: *const crate::addr::raw::gensio_addr,
 		 txt: *const *const ffi::c_char,
 		 cb_data: *mut ffi::c_void) {
@@ -345,31 +351,27 @@ fn i_watch_event(_w: *const raw::gensio_mdns_watch,
 	Some(cb) => cb
     };
 
-    let namesstr = cstrptr_to_optstring(name);
-    let names = optstring_to_optstr(&namesstr);
-    let typesstr = cstrptr_to_optstring(mtype);
-    let types = optstring_to_optstr(&typesstr);
-    let domainsstr = cstrptr_to_optstring(domain);
-    let domains = optstring_to_optstr(&domainsstr);
-    let hostsstr = cstrptr_to_optstring(host);
-    let hosts = optstring_to_optstr(&hostsstr);
-    let addro: Option<addr::Addr>;
-    if addr == std::ptr::null() {
-	addro = None;
-    } else {
-	addro = Some(match addr::new(addr) {
-	    Ok(a) => a,
-	    Err(_) => return
-	});
-    }
-    let txt = crate::auxtovec(txt);
+    let namesstr = cstrptr_to_optstring(spec.name);
+    let typesstr = cstrptr_to_optstring(spec.mtype);
+    let domainsstr = cstrptr_to_optstring(spec.domain);
+    let hostsstr = cstrptr_to_optstring(spec.host);
+    let addro: Option<addr::Addr> =
+	if addr.is_null() {
+	    None
+	} else {
+	    Some(match unsafe { addr::new(addr) } {
+		Ok(a) => a,
+		Err(_) => return
+	    })
+	};
+    let txt = unsafe { crate::auxtovec(txt) };
     let txt2 = crate::auxvectostrvec(&txt);
-    let txt3 = match &txt2 {
-	None => None,
-	Some(t) => Some(t.as_slice())
-    };
-    cb.watch(state as i32, iface as i32, ipdomain as i32,
-	     names, types, domains, hosts,
+    let txt3 = txt2.as_deref();
+
+    cb.watch(state, &MDNSSpec { iface: spec.iface,
+				ipdomain: spec.ipdomain,
+				name: namesstr, mtype: typesstr,
+				domain: domainsstr, host: hostsstr },
 	     addro, txt3);
 }
 
@@ -385,8 +387,8 @@ extern "C" fn watch_event(w: *const raw::gensio_mdns_watch,
 			  txt: *const *const ffi::c_char,
 			  cb_data: *mut ffi::c_void) {
     let _r = panic::catch_unwind(|| {
-	i_watch_event(w, state, iface, ipdomain,
-		      name, mtype, domain, host,
+	i_watch_event(w, state, &IMDNSSpec{ iface, ipdomain,
+					    name, mtype, domain, host },
 		      addr, txt, cb_data);
     });
 }
@@ -394,7 +396,7 @@ extern "C" fn watch_event(w: *const raw::gensio_mdns_watch,
 impl Watch {
     fn i_shutdown(&self, cb: Option<Weak<dyn WatchDone>>)
 		  -> Result<(), i32> {
-	let d = Box::new(WatchDoneData { cb: cb, d: self.d });
+	let d = Box::new(WatchDoneData { cb, d: self.d });
 	let d = Box::into_raw(d);
 	let err = unsafe { raw::gensio_mdns_remove_watch(
 	    self.w, watch_done, d as *mut ffi::c_void) };
@@ -438,10 +440,8 @@ impl Drop for Watch {
 		    CloseState::Open => {
 			*state = CloseState::WaitClose;
 			let err = self.i_shutdown(None);
-			match err {
-			    Ok(_) => do_wait = true,
-			    _ => () // FIXME - what to do on error?
-			}
+			// FIXME - what to do on error?
+			if err.is_ok() { do_wait = true };
 		    }
 		}
 	    }
@@ -484,12 +484,7 @@ mod tests {
     impl WatchEvent for IWatchEvent {
 	fn watch(&self,
 		 state: i32,
-		 _iface: i32,
-		 _ipdomain: i32,
-		 name: Option<&str>,
-		 mtype: Option<&str>,
-		 _domain: Option<&str>,
-		 _host:  Option<&str>,
+		 spec: &MDNSSpec,
 		 _addr: Option<addr::Addr>,
 		 txt: Option<&[&str]>) {
 	    let wake;
@@ -514,8 +509,8 @@ mod tests {
 	    //crate::puts(a.as_str());
 	    //crate::puts("\n");
 
-	    assert_eq!(name, Some(d.name.as_str()));
-	    assert_eq!(mtype, Some(d.mtype.as_str()));
+	    assert_eq!(spec.name, Some(d.name.to_string()));
+	    assert_eq!(spec.mtype, Some(d.mtype.to_string()));
 	    match txt {
 		None => panic!("txt should be present"),
 		Some(t) => {
@@ -569,17 +564,27 @@ mod tests {
 		txt: vec!["A=1".to_string(), "B=2".to_string()],
 	    }),
 	});
-	let w = m.new_watch(-1, addr::GENSIO_NETTYPE_UNSPEC, None,
-			    Some("=_gensio_rusttest._tcp"), None, None,
-			    Arc::downgrade(&we) as _)
+	let w = m.new_watch(
+	    &MDNSSpec {
+		iface: -1,
+		ipdomain: addr::GENSIO_NETTYPE_UNSPEC,
+		name: None,
+		mtype: Some("=_gensio_rusttest._tcp".to_string()),
+		domain: None, host: None },
+	    Arc::downgrade(&we) as _)
 	    .expect("Unable to allocate watch");
 	let se = Arc::new(IServiceEvent {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
-	let s = m.new_service(-1, addr::GENSIO_NETTYPE_UNSPEC, Some("gensio1"),
-			      Some("_gensio_rusttest._tcp"), None, None,
-			      5001, Some(&["A=1", "B=2"]),
-			      Arc::downgrade(&se) as _)
+	let s = m.new_service(
+	    &MDNSSpec {
+		iface: -1,
+		ipdomain: addr::GENSIO_NETTYPE_UNSPEC,
+		name: Some("gensio1".to_string()),
+		mtype: Some("_gensio_rusttest._tcp".to_string()),
+		domain: None, host: None },
+	    5001, Some(&["A=1", "B=2"]),
+	    Arc::downgrade(&se) as _)
 	    .expect("Unable to allocate watch");
 	se.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
 	we.w.wait(1, Some(&Duration::new(5, 0))).expect("Wait failed");
@@ -614,17 +619,27 @@ mod tests {
 		txt: vec![],
 	    }),
 	});
-	let _w = m.new_watch(-1, addr::GENSIO_NETTYPE_UNSPEC, None,
-			     Some("=_gensio_rusttest2._tcp"), None, None,
-			     Arc::downgrade(&we) as _)
+	let _w = m.new_watch(
+	    &MDNSSpec {
+		iface: -1,
+		ipdomain: addr::GENSIO_NETTYPE_UNSPEC,
+		name: None,
+		mtype: Some("=_gensio_rusttest._tcp".to_string()),
+		domain: None, host: None },
+	    Arc::downgrade(&we) as _)
 	    .expect("Unable to allocate watch");
 	let se = Arc::new(IServiceEvent {
 	    w: o.new_waiter().expect("Unable to allocate waiter")
 	});
-	let _s = m.new_service(-1, addr::GENSIO_NETTYPE_UNSPEC, Some("gensio2"),
-			       Some("=_gensio_rusttest2._tcp"), None, None,
-			       5001, Some(&["A=1", "B=2"]),
-			       Arc::downgrade(&se) as _)
+	let _s = m.new_service(
+	    &MDNSSpec {
+		iface: -1,
+		ipdomain: addr::GENSIO_NETTYPE_UNSPEC,
+		name: Some("gensio1".to_string()),
+		mtype: Some("_gensio_rusttest._tcp".to_string()),
+		domain: None, host: None },
+	    5001, Some(&["A=1", "B=2"]),
+	    Arc::downgrade(&se) as _)
 	    .expect("Unable to allocate watch");
 	// Test automatic cleanup
     }

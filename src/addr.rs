@@ -30,19 +30,21 @@ pub const GENSIO_NETTYPE_IPV6: i32 = 2;
 pub const GENSIO_NETTYPE_UNIX: i32 = 3;
 pub const GENSIO_NETTYPE_AX25: i32 = 4;
 
-// Create a new address from a raw gensio address.  This is mostly for
-// internal use.
-pub fn new(ai: *const raw::gensio_addr) -> Result<Addr, i32> {
+/// # Safety
+///
+/// Create a new address from a raw gensio address.  This is mostly for
+/// internal use, the ai value must be valid.
+pub unsafe fn new(ai: *const raw::gensio_addr) -> Result<Addr, i32> {
     let naddr = unsafe { raw::gensio_addr_dup(ai) };
-    if ai == std::ptr::null() {
+    if ai.is_null() {
 	return Err(crate::GE_NOMEM);
     }
     Ok(Addr { ai: naddr })
 }
 
-// Create an address from the nettype, port, and a buffer with the
-// address info, either the ipv4 address, ipv6 address, or the unix
-// path.  Doesn't work for AX25.
+/// Create an address from the nettype, port, and a buffer with the
+/// address info, either the ipv4 address, ipv6 address, or the unix
+/// path.  Doesn't work for AX25.
 pub fn from_bytes(o: &osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
 		  -> Result<Addr, i32> {
     let ai: *const raw::gensio_addr = std::ptr::null();
@@ -55,7 +57,7 @@ pub fn from_bytes(o: &osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
     if rv != 0 {
 	return Err(rv);
     }
-    Ok(Addr { ai: ai })
+    Ok(Addr { ai })
 }
 
 /// Create an address from an address string.  Doesn't work for AX25.
@@ -77,7 +79,7 @@ pub fn from_str(o: &osfuncs::OsFuncs, s: &str, protocol: i32, listen: bool)
     if rv != 0 {
 	return Err(rv);
     }
-    Ok(Addr { ai: ai })
+    Ok(Addr { ai })
 }
 
 impl Addr {
@@ -94,13 +96,13 @@ impl Addr {
 
     /// Get the nettype from the address.
     pub fn nettype(&self) -> i32 {
-	unsafe { raw::gensio_addr_get_nettype(self.ai) as i32 }
+	unsafe { raw::gensio_addr_get_nettype(self.ai) }
     }
 
     /// Get the port from the address.  Returns -1 if the address doesn't
     /// use a port.
     pub fn port(&self) -> i32 {
-	unsafe { raw::gensio_addr_get_port(self.ai) as i32 }
+	unsafe { raw::gensio_addr_get_port(self.ai) }
     }
 
     /// Compare two addresses for equality.  cmp_port sets whether the
@@ -138,7 +140,7 @@ impl Addr {
 impl Clone for Addr {
     fn clone(&self) -> Self {
 	let naddr = unsafe { raw::gensio_addr_dup(self.ai) };
-	if naddr == std::ptr::null() {
+	if naddr.is_null() {
 	    panic!("Address clone failed");
 	}
 	Addr { ai: naddr }

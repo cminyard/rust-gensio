@@ -24,14 +24,14 @@ impl Drop for IOsFuncs {
     fn drop(&mut self) {
         let l_proc_data = self.proc_data.lock().unwrap();
         let proc_data = *l_proc_data;
-        if proc_data != std::ptr::null() {
+        if !proc_data.is_null() {
             unsafe {
 		raw::gensio_os_proc_cleanup(proc_data);
 	    }
         }
 
         unsafe {
-	    if self.log_data != std::ptr::null_mut() {
+	    if !self.log_data.is_null() {
 		drop(Box::from_raw(self.log_data));
 	    }
 	    raw::gensio_rust_cleanup(self.o);
@@ -72,7 +72,7 @@ pub fn new_flags(log_func: Weak<dyn GensioLogHandler>,
 					 d as *mut ffi::c_void);
 	    }
             let ios = IOsFuncs {
-                log_data: d, o: o,
+                log_data: d, o,
 		proc_data: Mutex::new(std::ptr::null()),
                 term_handler: Arc::new(GensioTermHandlerData
                                        {cb: Mutex::new(None)}),
@@ -90,7 +90,7 @@ pub fn new_flags(log_func: Weak<dyn GensioLogHandler>,
 /// Allocate an OsFuncs structure.  This takes a log handler for
 /// handling internal logs from gensios and osfuncs.
 pub fn new(log_func: Weak<dyn GensioLogHandler>) -> Result<OsFuncs, i32> {
-    return new_flags(log_func, 0);
+    new_flags(log_func, 0)
 }
 
 /// Used for OsFuncs to handle logs.
@@ -140,11 +140,10 @@ struct GensioTermHandlerData {
 
 fn i_term_handler(data: *mut ffi::c_void) {
     let d = data as *mut GensioTermHandlerData;
-    let cb;
-    match *unsafe {(*d).cb.lock().unwrap() } {
+    let cb = match *unsafe {(*d).cb.lock().unwrap() } {
         None => return,
-        Some(ref icb) => cb = icb.upgrade()
-    }
+        Some(ref icb) => icb.upgrade()
+    };
     match cb {
         None => (),
         Some(cb) => cb.term_sig()
@@ -170,11 +169,10 @@ struct GensioHupHandlerData {
 
 fn i_hup_handler(data: *mut ffi::c_void) {
     let d = data as *mut GensioHupHandlerData;
-    let cb;
-    match *unsafe {(*d).cb.lock().unwrap() } {
+    let cb = match *unsafe {(*d).cb.lock().unwrap() } {
         None => return,
-        Some(ref icb) => cb = icb.upgrade()
-    }
+        Some(ref icb) => icb.upgrade()
+    };
     match cb {
         None => (),
         Some(cb) => cb.hup_sig()
@@ -201,11 +199,10 @@ struct GensioWinsizeHandlerData {
 fn i_winsize_handler(x_chrs: i32, y_chrs: i32, x_bits: i32, y_bits: i32,
                      data: *mut ffi::c_void) {
     let d = data as *mut GensioWinsizeHandlerData;
-    let cb;
-    match *unsafe {(*d).cb.lock().unwrap() } {
+    let cb = match *unsafe {(*d).cb.lock().unwrap() } {
         None => return,
-        Some(ref icb) => cb = icb.upgrade()
-    }
+        Some(ref icb) => icb.upgrade()
+    };
     match cb {
         None => (),
         Some(cb) => cb.winsize_sig(x_chrs, y_chrs, x_bits, y_bits)
@@ -266,7 +263,7 @@ impl OsFuncs {
             let l_proc_data = self.o.proc_data.lock().unwrap();
             proc_data = *l_proc_data;
         }
-        if proc_data == std::ptr::null() {
+        if proc_data.is_null() {
             return Err(crate::GE_NOTREADY);
         }
 
@@ -296,7 +293,7 @@ impl OsFuncs {
             let l_proc_data = self.o.proc_data.lock().unwrap();
             proc_data = *l_proc_data;
         }
-        if proc_data == std::ptr::null() {
+        if proc_data.is_null() {
             return Err(crate::GE_NOTREADY);
         }
 
@@ -319,9 +316,11 @@ impl OsFuncs {
         }
     }
 
+    /// # Safety
     /// Register a callback to be called when the console window gets
-    /// resized.
-    pub fn register_winsize_handler(&self, console_iod: *const raw::gensio_iod,
+    /// resized.  The console_iod must be valid.
+    pub unsafe fn register_winsize_handler(&self,
+				    console_iod: *const raw::gensio_iod,
                                     handler: Weak<dyn GensioWinsizeHandler>)
                                     -> Result<(), i32> {
         let proc_data;
@@ -329,7 +328,7 @@ impl OsFuncs {
             let l_proc_data = self.o.proc_data.lock().unwrap();
             proc_data = *l_proc_data;
         }
-        if proc_data == std::ptr::null() {
+        if proc_data.is_null() {
             return Err(crate::GE_NOTREADY);
         }
 
@@ -359,10 +358,10 @@ impl OsFuncs {
 	unsafe {
 	    w = raw::gensio_os_funcs_alloc_waiter(self.o.o);
 	}
-	if w == std::ptr::null() {
+	if w.is_null() {
 	    Err(crate::GE_NOMEM)
 	} else {
-	    Ok(Waiter { o: self.o.clone() , w: w })
+	    Ok(Waiter { o: self.o.clone() , w })
 	}
     }
 
@@ -377,7 +376,7 @@ impl OsFuncs {
 				     cb,
 				     freed: false,
 				     stopping: false,
-				     w: w, m: Mutex::new(0) });
+				     w, m: Mutex::new(0) });
 	let d = Box::into_raw(d);
 	let t;
 	unsafe {
@@ -385,11 +384,11 @@ impl OsFuncs {
 						 d as *mut ffi::c_void);
 	}
 
-	if t == std::ptr::null() {
+	if t.is_null() {
 	    unsafe { drop(Box::from_raw(d)); }
 	    return Err(crate::GE_NOMEM);
 	}
-	Ok(Timer { t: t, d: d })
+	Ok(Timer { t, d })
     }
 
     /// Allocate a new Runner object for the OsFuncs.
@@ -403,11 +402,11 @@ impl OsFuncs {
 						  d as *mut ffi::c_void);
 	}
 
-	if r == std::ptr::null() {
+	if r.is_null() {
 	    unsafe { drop(Box::from_raw(d)); }
 	    return Err(crate::GE_NOMEM);
 	}
-	Ok(Runner { r: r, d: d })
+	Ok(Runner { r, d })
     }
 
     /// Run the service loop once to handle events.
@@ -426,7 +425,7 @@ impl OsFuncs {
 	let err = unsafe { raw::gensio_os_funcs_service(self.o.o, t) };
 	match err {
 	    0 => {
-                if t == std::ptr::null() {
+                if t.is_null() {
                     Ok(None)
                 } else {
                     Ok(Some(unsafe {Duration::new((*t).secs as u64,
@@ -452,7 +451,7 @@ impl OsFuncs {
 
 impl Clone for OsFuncs {
     fn clone(&self) -> Self {
-        return OsFuncs { o: self.o.clone() }
+        OsFuncs { o: self.o.clone() }
     }
 }
 
@@ -494,7 +493,7 @@ impl Waiter {
 						     count, t) };
 	match err {
 	    0 => {
-                if t == std::ptr::null() {
+                if t.is_null() {
                     Ok(None)
                 } else {
                     Ok(Some(unsafe {Duration::new((*t).secs as u64,
@@ -523,7 +522,7 @@ impl Waiter {
 							  count, t) };
 	match err {
 	    0 => {
-                if t == std::ptr::null() {
+                if t.is_null() {
                     Ok(None)
                 } else {
                     Ok(Some(unsafe {Duration::new((*t).secs as u64,

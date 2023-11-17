@@ -57,6 +57,11 @@ impl NetIfs {
 	self.len as usize
     }
 
+    /// Do we have any network interfaces?
+    pub fn is_empty(&self) -> bool {
+	self.len == 0
+    }
+
     /// Get the OS name for the network interface.
     pub fn get_name(&self, idx: usize) -> Result<String, i32> {
 	let ni = self.get_ni(idx)?;
@@ -94,8 +99,8 @@ impl NetIfs {
 	Ok(unsafe { (*ni).naddrs } as usize )
     }
 
-    fn get_addr<'a>(&'a self, idx: usize, aidx: usize)
-		-> Result<&'a raw::gensio_net_addr, i32> {
+    fn get_addr(&self, idx: usize, aidx: usize)
+		-> Result<&raw::gensio_net_addr, i32> {
 	let ni = self.get_ni(idx)?;
 	if aidx >= unsafe { (*ni).naddrs } as usize {
 	    return Err(crate::GE_OUTOFRANGE);
