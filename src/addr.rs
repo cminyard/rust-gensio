@@ -152,19 +152,12 @@ impl Clone for Addr {
 impl ToString for Addr {
     fn to_string(&self) -> String {
 	let mut buf: Vec<u8> = Vec::new();
-	buf.push(0);
+	// We have to allocate something to have a pointer to pass to
+	// gensio_addr_to_string(), this should be enough for any
+	// address.
+	buf.reserve(100);
 	let mut pos: GensioDS = 0;
 
-	let rv = unsafe {
-	    raw::gensio_addr_to_str(self.ai,
-				    buf.as_mut_ptr() as *mut ffi::c_char,
-				    &mut pos, 0)
-	};
-	if rv != 0 {
-	    panic!("Unable to convert address to string");
-	}
-	buf.reserve(pos as usize + 1);
-	pos = 0;
 	let rv = unsafe {
 	    raw::gensio_addr_to_str(self.ai,
 				    buf.as_mut_ptr() as *mut ffi::c_char,
@@ -172,6 +165,19 @@ impl ToString for Addr {
 	};
 	if rv != 0 {
 	    panic!("Unable to convert address to string");
+	}
+	if pos as usize > buf.capacity() + 1 {
+	    // Just in case the address is too big for the first allocation.
+	    buf.reserve(pos as usize + 1);
+	    pos = 0;
+	    let rv = unsafe {
+		raw::gensio_addr_to_str(self.ai,
+					buf.as_mut_ptr() as *mut ffi::c_char,
+					&mut pos, buf.capacity() as GensioDS)
+	    };
+	    if rv != 0 {
+		panic!("Unable to convert address to string");
+	    }
 	}
 	unsafe { buf.set_len(pos as usize); }
 	let cstr = ffi::CString::new(buf).expect("Invalid address string");

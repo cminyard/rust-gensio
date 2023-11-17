@@ -1079,7 +1079,7 @@ impl Gensio {
 
     /// Read some data from the gensio.  On success, the number of
     /// bytes read is returned.  On failure an error code is
-    /// returned.
+    /// returned.  The data vector is filled in with data.
     pub fn read_s(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
 		  -> Result<u64, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
@@ -1101,9 +1101,8 @@ impl Gensio {
 	}
     }
 
-    /// Read some data from the gensio.  On success, the number of
-    /// bytes read is returned.  On failure an error code is
-    /// returned.
+    /// Like read_s, but if a signal comes in this will return an
+    /// interrupted error.
     pub fn read_s_intr(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
 		  -> Result<u64, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };

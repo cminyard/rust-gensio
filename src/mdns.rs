@@ -514,9 +514,9 @@ mod tests {
 		_ => return,
 	    }
 
-	    //let a = _addr.expect("No address").to_string();
-	    //crate::puts(a.as_str());
-	    //crate::puts("\n");
+	    let a = _addr.expect("No address").to_string();
+	    crate::puts(a.as_str());
+	    crate::puts("\n");
 
 	    assert_eq!(spec.name, Some(d.name.to_string()));
 	    assert_eq!(spec.mtype, Some(d.mtype.to_string()));
