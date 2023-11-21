@@ -24,6 +24,7 @@ pub mod mdns;
 pub mod netifs;
 
 use crate::osfuncs::OsFuncs;
+use crate::osfuncs::Waiter;
 
 /// gensio error values.  See gensio_err.3
 #[repr(i32)]
@@ -468,7 +469,7 @@ struct GensioData {
     o: OsFuncs,
     cb: Weak<dyn Event>,
     state: Mutex<GensioState>,
-    close_waiter: osfuncs::Waiter,
+    close_waiter: Waiter,
 }
 
 /// A gensio
@@ -581,7 +582,7 @@ fn new_gensio_data(o: &OsFuncs, cb: Weak<dyn Event>,
 	           state: GensioState) -> Result<GensioData, Error> {
     Ok(GensioData {
         o: o.clone(), cb, state: Mutex::new(state),
-        close_waiter: o.new_waiter()?,
+        close_waiter: Waiter::new(&o)?,
     })
  }
 
@@ -1561,7 +1562,7 @@ struct AccepterData {
     o: OsFuncs, // Used to keep the os funcs alive.
     cb: Weak<dyn AccepterEvent>,
     state: Mutex<GensioState>,
-    close_waiter: osfuncs::Waiter,
+    close_waiter: Waiter,
 }
 
 /// An accepter gensio for receiving connections.
@@ -1784,7 +1785,7 @@ impl Accepter {
         let dt = Box::new(AccepterData { o: o.clone(),
 				         cb,
 				         state: Mutex::new(GensioState::Closed),
-				         close_waiter: o.new_waiter()?, });
+				         close_waiter: Waiter::new(&o)?, });
         let dt = Box::into_raw(dt);
         // Everything from here to the end of the function shouldn't
         // panic, so there is no need to worry about unwinding not
@@ -2093,7 +2094,7 @@ mod tests {
     }
 
     struct EvStruct {
-	w: osfuncs::Waiter
+	w: Waiter
     }
 
     impl Event for EvStruct {
@@ -2143,7 +2144,7 @@ mod tests {
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
-	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
 	let e = Arc::new(EvStruct { w: w });
 	let ew = Arc::downgrade(&e);
 	let g = Gensio::new("echo", &o, ew.clone())
@@ -2166,7 +2167,7 @@ mod tests {
     }
 
     struct AccEvent {
-	w: osfuncs::Waiter,
+	w: Waiter,
 	d: Mutex<AccMutData>,
     }
 
@@ -2206,7 +2207,7 @@ mod tests {
     }
 
     struct GenEvent {
-	w: osfuncs::Waiter,
+	w: Waiter,
 	_g: Option<Arc<Gensio>>,
 	d: Mutex<GenMutData>,
     }
@@ -2248,7 +2249,7 @@ mod tests {
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
-	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e = Arc::new(AccEvent { w: w, d });
 
@@ -2274,7 +2275,7 @@ mod tests {
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
-	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e1 = Arc::new(AccEvent { w: w, d });
 	let a = Accepter::new("tcp,127.0.0.1,0", &o,
@@ -2287,7 +2288,7 @@ mod tests {
 	    Err(err) => panic!("Error getting acc laddr {err}")
 	};
 
-	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: Error::NoErr });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d });
 	let g = Gensio::new(&format!("tcp,127.0.0.1,{port}"), &o,
@@ -2307,7 +2308,7 @@ mod tests {
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
-	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
 	let d = Mutex::new(AccMutData { logstr: None, ag: None });
 	let e1 = Arc::new(AccEvent { w: w, d });
 	let e1w = Arc::downgrade(&e1);
@@ -2320,7 +2321,7 @@ mod tests {
 	    Err(err) => panic!("Error getting acc laddr {err}")
 	};
 
-	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
 	let d = Mutex::new(GenMutData { logstr: None, experr: Error::NoErr });
 	let e2 = Arc::new(GenEvent { w: w, _g: None, d });
 	let g = Gensio::new(&format!("tcp,127.0.0.1,{port}"), &o,
@@ -2333,7 +2334,7 @@ mod tests {
 	// Assign a handler for the new gensio
 	let e3;
 	{
-	    let w = o.new_waiter().expect("Couldn't allocate waiter");
+	    let w = Waiter::new(&o).expect("Couldn't allocate waiter");
 	    let d = Mutex::new(GenMutData { logstr: None,
 					    experr: Error::RemClose });
 	    e3 = Arc::new(GenEvent { w: w, _g: None, d });
@@ -2674,7 +2675,7 @@ mod tests {
     }
 
     struct SerialEvInst {
-	w: osfuncs::Waiter,
+	w: Waiter,
 	expect_val: Mutex<Option<String>>,
     }
 
@@ -2743,7 +2744,7 @@ mod tests {
 	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
-	let w = o.new_waiter().expect("Couldn't allocate waiter");
+	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
         let r = new_telnet_reflector(&o).expect("Allocate reflector failed");
 
 	let e = Arc::new(SerialEvInst{

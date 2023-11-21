@@ -14,10 +14,11 @@ use gensio::Gensio;
 use gensio::Error;
 use gensio::osfuncs;
 use gensio::osfuncs::OsFuncs;
+use crate::osfuncs::Waiter;
 
 // An event handler, data received on io is written to otherio.
 struct ClientEvent {
-    w: Arc<osfuncs::Waiter>,
+    w: Arc<Waiter>,
     io: Arc<gensio::Gensio>,
     otherio: Arc<gensio::Gensio>,
 }
@@ -113,7 +114,7 @@ fn main() {
 		       .expect("Unable to allocate stdio gensio"));
     let io2 = Arc::new(Gensio::new(&telnetstr, &o, start_ew)
 		       .expect("Unable to allocate telnet gensio"));
-    let w = Arc::new(o.new_waiter().expect("Unable to allocate waiter 1"));
+    let w = Arc::new(Waiter::new(&o).expect("Unable to allocate waiter 1"));
     let ev1 = Arc::new(ClientEvent { w: w.clone(), io: io1.clone(),
 				     otherio: io2.clone() });
     ev1.io.set_handler(Arc::downgrade(&ev1) as _);

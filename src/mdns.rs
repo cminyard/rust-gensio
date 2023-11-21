@@ -8,6 +8,7 @@ use std::ffi;
 use std::ffi::CString;
 use crate::osfuncs;
 use crate::osfuncs::OsFuncs;
+use crate::osfuncs::Waiter;
 use crate::addr;
 pub mod raw;
 use std::panic;
@@ -154,7 +155,7 @@ impl MDNS {
 	    _o: self.o.clone(),
 	    cb,
 	    state: Mutex::new(CloseState::Open),
-	    close_waiter: self.o.new_waiter()?,
+	    close_waiter: Waiter::new(&self.o)?,
 	});
 	let w: *const raw::gensio_mdns_watch = std::ptr::null();
 	let (namep, _nameh) = optstr_to_cstr(&spec.name)?;
@@ -565,7 +566,7 @@ mod tests {
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
 	let we = Arc::new(IWatchEvent {
-	    w: o.new_waiter().expect("Unable to allocate waiter"),
+	    w: Waiter::new(&o).expect("Unable to allocate waiter"),
 	    d: Mutex::new(IWatchEventData {
 		do_check: true,
 		waiting_gone: false,
@@ -584,7 +585,7 @@ mod tests {
 	    Arc::downgrade(&we) as _)
 	    .expect("Unable to allocate watch");
 	let se = Arc::new(IServiceEvent {
-	    w: o.new_waiter().expect("Unable to allocate waiter")
+	    w: Waiter::new(&o).expect("Unable to allocate waiter")
 	});
 	let s = m.new_service(
 	    &MDNSSpec {
@@ -605,7 +606,7 @@ mod tests {
 	drop(s);
 	we.w.wait(1, Some(&Duration::new(5, 0))).expect("Wait failed");
 	let wd = Arc::new(IWatchDone {
-	    w: o.new_waiter().expect("Unable to allocate waiter")
+	    w: Waiter::new(&o).expect("Unable to allocate waiter")
 	});
 	w.shutdown(Some(Arc::downgrade(&wd) as _)).expect("Shutdown failed");
 	wd.w.wait(1, Some(&Duration::new(5, 0))).expect("Wait failed");
@@ -620,7 +621,7 @@ mod tests {
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
 	let we = Arc::new(IWatchEvent {
-	    w: o.new_waiter().expect("Unable to allocate waiter"),
+	    w: Waiter::new(&o).expect("Unable to allocate waiter"),
 	    d: Mutex::new(IWatchEventData {
 		do_check: false,
 		waiting_gone: false,
@@ -639,7 +640,7 @@ mod tests {
 	    Arc::downgrade(&we) as _)
 	    .expect("Unable to allocate watch");
 	let se = Arc::new(IServiceEvent {
-	    w: o.new_waiter().expect("Unable to allocate waiter")
+	    w: Waiter::new(&o).expect("Unable to allocate waiter")
 	});
 	let _s = m.new_service(
 	    &MDNSSpec {
