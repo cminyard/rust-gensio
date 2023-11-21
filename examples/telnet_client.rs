@@ -10,8 +10,10 @@
 use std::env;
 use std::sync::Arc;
 use gensio;
+use gensio::Gensio;
 use gensio::Error;
 use gensio::osfuncs;
+use gensio::osfuncs::OsFuncs;
 
 // An event handler, data received on io is written to otherio.
 struct ClientEvent {
@@ -101,15 +103,15 @@ fn main() {
     telnetstr.push_str(&args[1]);
 
     let logh = Arc::new(LogHandler);
-    let o = osfuncs::new(Arc::downgrade(&logh) as _)
+    let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	.expect("Couldn't allocate os funcs");
     o.proc_setup().expect("Couldn't setup thread");
 
     let start_e = Arc::new(StartupEvent{});
     let start_ew = Arc::downgrade(&start_e);
-    let io1 = Arc::new(gensio::new("stdio(self)", &o, start_ew.clone())
+    let io1 = Arc::new(Gensio::new("stdio(self)", &o, start_ew.clone())
 		       .expect("Unable to allocate stdio gensio"));
-    let io2 = Arc::new(gensio::new(&telnetstr, &o, start_ew)
+    let io2 = Arc::new(Gensio::new(&telnetstr, &o, start_ew)
 		       .expect("Unable to allocate telnet gensio"));
     let w = Arc::new(o.new_waiter().expect("Unable to allocate waiter 1"));
     let ev1 = Arc::new(ClientEvent { w: w.clone(), io: io1.clone(),

@@ -10,7 +10,7 @@
 
 use std::ffi;
 use std::slice;
-use crate::osfuncs;
+use crate::osfuncs::OsFuncs;
 use crate::Error;
 use crate::val_to_error;
 
@@ -25,14 +25,14 @@ pub const GENSIO_NET_IF_MULTICAST: u32 = 1 << 2;
 /// the get() functions.  Each interface holds a list of addresses you
 /// fetch with the index and the address index.
 pub struct NetIfs {
-    o: osfuncs::OsFuncs,
+    o: OsFuncs,
     ni: *const *const raw::gensio_net_if,
     len: ffi::c_uint,
 }
 
 /// Allocate a new NetIfs structure and fill it in with the network
 /// interfaces.
-pub fn new(o: &osfuncs::OsFuncs) -> Result<NetIfs, Error> {
+pub fn new(o: &OsFuncs) -> Result<NetIfs, Error> {
     let ni: *const *const raw::gensio_net_if = std::ptr::null();
     let mut len: ffi::c_uint = 0;
     let rv = unsafe {
@@ -138,6 +138,7 @@ impl Drop for NetIfs {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use crate::osfuncs;
 
     struct LogHandler;
 
@@ -150,7 +151,7 @@ mod tests {
     #[test]
     fn netifs() {
 	let logh = Arc::new(LogHandler);
-	let o = osfuncs::new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 

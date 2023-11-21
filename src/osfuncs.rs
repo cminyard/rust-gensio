@@ -53,54 +53,6 @@ pub struct OsFuncs {
 /// platforms.
 pub const GENSIO_OS_FUNCS_FLAG_PRIO_INHERIT: u32 = 1 << 0;
 
-/// Allocate an OsFuncs structure.  This takes a log handler for
-/// handling internal logs from gensios and osfuncs.  Set the flags to
-/// 0, generally.  There is a priority inheritance flag if you need
-/// that.
-pub fn new_flags(log_func: Weak<dyn GensioLogHandler>,
-		 flags: u32) -> Result<OsFuncs, Error> {
-    let err;
-    let o: *const raw::gensio_os_funcs = std::ptr::null();
-
-    unsafe {
-	err = raw::gensio_alloc_os_funcs(-198234, &o, flags as ffi::c_uint);
-    }
-    match err {
-	0 => {
-	    let d = Box::new(GensioLogHandlerData { cb: log_func });
-	    let proc_data = Mutex::new(std::ptr::null());
-	    let term_handler = Arc::new(GensioTermHandlerData
-					{cb: Mutex::new(None)});
-	    let winsize_handler = Arc::new(GensioWinsizeHandlerData
-                                           {cb: Mutex::new(None)});
-	    let hup_handler = Arc::new(GensioHupHandlerData
-                                       {cb: Mutex::new(None)});
-	    let d = Box::into_raw(d);
-	    // Nothing below here can panic, so it's safe to convert
-	    // the Box to raw here.
-	    unsafe {
-		raw::gensio_rust_set_log(o, log_handler,
-					 d as *mut ffi::c_void);
-	    }
-            let ios = IOsFuncs {
-                log_data: d, o,
-		proc_data,
-                term_handler,
-                winsize_handler,
-                hup_handler,
-            };
-            Ok(OsFuncs { o: Arc::new(ios) })
-	}
-	_ => Err(val_to_error(err))
-    }
-}
-
-/// Allocate an OsFuncs structure.  This takes a log handler for
-/// handling internal logs from gensios and osfuncs.
-pub fn new(log_func: Weak<dyn GensioLogHandler>) -> Result<OsFuncs, Error> {
-    new_flags(log_func, 0)
-}
-
 /// Used for OsFuncs to handle logs.
 /// Note: You must keep this object around because it is stored as Weak.
 /// If you allow this object to be done, the callbacks will stop working.
@@ -226,6 +178,54 @@ extern "C" fn winsize_handler(x_chrs: i32, y_chrs: i32,
 }
 
 impl OsFuncs {
+    /// Allocate an OsFuncs structure.  This takes a log handler for
+    /// handling internal logs from gensios and osfuncs.  Set the flags to
+    /// 0, generally.  There is a priority inheritance flag if you need
+    /// that.
+    pub fn new_flags(log_func: Weak<dyn GensioLogHandler>,
+		     flags: u32) -> Result<Self, Error> {
+        let err;
+        let o: *const raw::gensio_os_funcs = std::ptr::null();
+
+        unsafe {
+	    err = raw::gensio_alloc_os_funcs(-198234, &o, flags as ffi::c_uint);
+        }
+        match err {
+	    0 => {
+	        let d = Box::new(GensioLogHandlerData { cb: log_func });
+	        let proc_data = Mutex::new(std::ptr::null());
+	        let term_handler = Arc::new(GensioTermHandlerData
+					    {cb: Mutex::new(None)});
+	        let winsize_handler = Arc::new(GensioWinsizeHandlerData
+                                               {cb: Mutex::new(None)});
+	        let hup_handler = Arc::new(GensioHupHandlerData
+                                           {cb: Mutex::new(None)});
+	        let d = Box::into_raw(d);
+	        // Nothing below here can panic, so it's safe to convert
+	        // the Box to raw here.
+	        unsafe {
+		    raw::gensio_rust_set_log(o, log_handler,
+					     d as *mut ffi::c_void);
+	        }
+                let ios = IOsFuncs {
+                    log_data: d, o,
+		    proc_data,
+                    term_handler,
+                    winsize_handler,
+                    hup_handler,
+                };
+                Ok(OsFuncs { o: Arc::new(ios) })
+	    }
+	    _ => Err(val_to_error(err))
+        }
+    }
+
+    /// Allocate an OsFuncs structure.  This takes a log handler for
+    /// handling internal logs from gensios and osfuncs.
+    pub fn new(log_func: Weak<dyn GensioLogHandler>) -> Result<Self, Error> {
+        Self::new_flags(log_func, 0)
+    }
+
     /// Called to setup the task (signals, shutdown handling, etc.)
     /// for a process.  This should be called on the first OsFuncs
     /// (and only the first one, this should only be called once
@@ -295,7 +295,7 @@ impl OsFuncs {
 
     /// Register a callback to be called when a SIGHUP is received.
     pub fn register_hup_handler(&self, handler: Weak<dyn GensioHupHandler>)
-                                 -> Result<(), Error> {
+                                -> Result<(), Error> {
         let proc_data;
         {
             let l_proc_data = self.o.proc_data.lock().unwrap();
@@ -851,7 +851,7 @@ mod tests {
     #[test]
     fn wait_test() {
 	let logh = Arc::new(LogHandler);
-	let o = new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let w = o.new_waiter().expect("Couldn't allocate Waiter");
@@ -873,7 +873,7 @@ mod tests {
     #[test]
     fn timer_test() {
 	let logh = Arc::new(LogHandler);
-	let o = new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
@@ -895,7 +895,7 @@ mod tests {
     #[test]
     fn timer_test2() {
 	let logh = Arc::new(LogHandler);
-	let o = new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
@@ -929,7 +929,7 @@ mod tests {
     #[test]
     fn timer_test3() {
 	let logh = Arc::new(LogHandler);
-	let o = new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
@@ -979,7 +979,7 @@ mod tests {
     #[test]
     fn timer_test4() {
 	let logh = Arc::new(LogHandler);
-	let o = new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 
@@ -1022,7 +1022,7 @@ mod tests {
     #[serial]
     fn term_test() {
 	let logh = Arc::new(LogHandler);
-	let o = new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate OsFuncs");
 	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(TermHnd {
@@ -1065,7 +1065,7 @@ mod tests {
     #[serial]
     fn hup_test() {
 	let logh = Arc::new(LogHandler);
-	let o = new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate OsFuncs");
 	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(HupHnd {
@@ -1105,7 +1105,7 @@ mod tests {
     #[serial]
     fn winsize_test() {
 	let logh = Arc::new(LogHandler);
-	let o = new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate OsFuncs");
 	o.proc_setup().expect("Couldn't setup proc");
 	let h = Arc::new(WinsizeHnd {
@@ -1154,7 +1154,7 @@ mod tests {
     #[test]
     fn runner_test() {
 	let logh = Arc::new(LogHandler);
-	let o = new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate OsFuncs");
 	o.thread_setup().expect("Couldn't setup thread");
 

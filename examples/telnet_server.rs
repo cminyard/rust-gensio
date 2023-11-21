@@ -12,6 +12,7 @@ use std::sync::Arc;
 use gensio;
 use gensio::Error;
 use gensio::osfuncs;
+use gensio::osfuncs::OsFuncs;
 
 struct TelnetReflectorInstList {
     list: Mutex<Vec<Arc<TelnetReflectorInst>>>,
@@ -303,14 +304,14 @@ impl gensio::AccepterEvent for InitialTelnetReflectorEv {
     }
 }
 
-fn new_telnet_reflector(o: &osfuncs::OsFuncs, port: &str)
+fn new_telnet_reflector(o: &OsFuncs, port: &str)
 			-> Result<Arc<TelnetReflector>, Error> {
     let mut astr = "telnet(rfc2217),tcp,localhost,0".to_string();
     astr.push_str(port);
     let ae = Arc::new(InitialTelnetReflectorEv{});
     // ae will go away when this function ends, but gets replaced in the
     // accepter before then.
-    let a = gensio::new_accepter(&astr, o, Arc::downgrade(&ae) as _)?;
+    let a = gensio::Accepter::new(&astr, o, Arc::downgrade(&ae) as _)?;
     a.startup()?;
     let port = a.control_str(gensio::CONTROL_DEPTH_FIRST,
 			     gensio::ControlDir::Get,
@@ -339,7 +340,7 @@ fn main() {
     }
 
     let logh = Arc::new(LogHandler);
-    let o = osfuncs::new(Arc::downgrade(&logh) as _)
+    let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	.expect("Couldn't allocate os funcs");
     o.proc_setup().expect("Couldn't setup thread");
     let r = new_telnet_reflector(&o, port).expect("Allocate reflector failed");

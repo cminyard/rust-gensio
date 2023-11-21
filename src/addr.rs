@@ -10,7 +10,7 @@
 use std::ffi;
 use std::ffi::CString;
 use crate::GensioDS;
-use crate::osfuncs;
+use crate::osfuncs::OsFuncs;
 use crate::Error;
 use crate::val_to_error;
 
@@ -47,7 +47,7 @@ pub unsafe fn new(ai: *const raw::gensio_addr) -> Result<Addr, Error> {
 /// Create an address from the nettype, port, and a buffer with the
 /// address info, either the ipv4 address, ipv6 address, or the unix
 /// path.  Doesn't work for AX25.
-pub fn from_bytes(o: &osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
+pub fn from_bytes(o: &OsFuncs, nettype: i32, buf: &[u8], port: u32)
 		  -> Result<Addr, Error> {
     let ai: *const raw::gensio_addr = std::ptr::null();
     let rv = unsafe {
@@ -63,7 +63,7 @@ pub fn from_bytes(o: &osfuncs::OsFuncs, nettype: i32, buf: &[u8], port: u32)
 }
 
 /// Create an address from an address string.  Doesn't work for AX25.
-pub fn from_str(o: &osfuncs::OsFuncs, s: &str, protocol: i32, listen: bool)
+pub fn from_str(o: &OsFuncs, s: &str, protocol: i32, listen: bool)
 		-> Result<Addr, Error> {
     let ai: *const raw::gensio_addr = std::ptr::null();
     let cstr = match CString::new(s) {
@@ -201,6 +201,7 @@ impl Drop for Addr {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use crate::osfuncs;
 
     struct LogHandler;
 
@@ -214,7 +215,7 @@ mod tests {
     fn addr() {
 	let logh = Arc::new(LogHandler);
 	let loghw = Arc::downgrade(&logh);
-	let o = osfuncs::new(loghw)
+	let o = OsFuncs::new(loghw)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 

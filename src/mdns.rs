@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use std::ffi;
 use std::ffi::CString;
 use crate::osfuncs;
+use crate::osfuncs::OsFuncs;
 use crate::addr;
 pub mod raw;
 use std::panic;
@@ -14,12 +15,12 @@ use crate::Error;
 use crate::val_to_error;
 
 pub struct MDNS {
-    o: osfuncs::OsFuncs,
+    o: OsFuncs,
     m: *const raw::gensio_mdns,
     closed: Mutex<bool>,
 }
 
-pub fn new(o: &osfuncs::OsFuncs) -> Result<MDNS, i32> {
+pub fn new(o: &OsFuncs) -> Result<MDNS, i32> {
     let m: *const raw::gensio_mdns = std::ptr::null();
     let rv = unsafe { raw::gensio_alloc_mdns(o.raw(), &m) };
     if rv != 0 {
@@ -209,7 +210,7 @@ pub trait ServiceEvent {
 }
 
 struct ServiceData {
-    _o: osfuncs::OsFuncs, // Keep osfuncs around
+    _o: OsFuncs, // Keep osfuncs around
     cb: Weak<dyn ServiceEvent>,
 }
 
@@ -325,7 +326,7 @@ enum CloseState {
 }
 
 struct WatchData {
-    _o: osfuncs::OsFuncs, // Keep osfuncs around
+    _o: OsFuncs, // Keep osfuncs around
     cb: Weak<dyn WatchEvent>,
     state: Mutex<CloseState>,
     close_waiter: osfuncs::Waiter,
@@ -559,7 +560,7 @@ mod tests {
     #[serial] // FIXME - figure out why these crash when not serial.
     fn mdns1() {
 	let logh = Arc::new(LogHandler);
-	let o = osfuncs::new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
@@ -614,7 +615,7 @@ mod tests {
     #[serial] // FIXME - figure out why these crash when not serial.
     fn mdns2() {
 	let logh = Arc::new(LogHandler);
-	let o = osfuncs::new(Arc::downgrade(&logh) as _)
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let m = new(&o).expect("Failed to allocate MDNS");
