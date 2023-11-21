@@ -89,7 +89,7 @@ pub const GENSIO_ACC_EVENT_REQUEST_PASSWORD: ffi::c_int =		6;
 #[repr(C)]
 pub struct gensio_acc_password_verify_data {
     pub io: *const gensio,
-    pub password: *const ffi::c_char,
+    pub password: *const ffi::c_void,
     pub password_len: gensiods,
 }
 

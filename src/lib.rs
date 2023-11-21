@@ -1647,7 +1647,9 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	}
 	raw::GENSIO_ACC_EVENT_PASSWORD_VERIFY => {
 	    let vd = data as *const raw::gensio_acc_password_verify_data;
-	    let cs = unsafe { ffi::CStr::from_ptr((*vd).password) };
+	    let cs = unsafe {
+		ffi::CStr::from_ptr((*vd).password as *const ffi::c_char)
+	    };
 	    let s = cs.to_str().expect("Invalid string");
 	    err = cb.password_verify(s);
 	}
@@ -1682,7 +1684,7 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	raw::GENSIO_ACC_EVENT_2FA_VERIFY => {
 	    let vd = data as *mut raw::gensio_acc_password_verify_data;
 	    let data = unsafe {
-		std::slice::from_raw_parts((*vd).password,
+		std::slice::from_raw_parts((*vd).password as *const u8,
                                            (*vd).password_len as usize)
 	    };
 	    err = cb.verify_2fa(data);
