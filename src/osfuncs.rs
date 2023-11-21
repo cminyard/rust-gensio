@@ -618,7 +618,7 @@ extern "C" fn timer_freed_handler(t: *const raw::gensio_timer,
 impl Timer {
     /// Allocate a new Timer object for the OsFuncs.
     pub fn new(o: &OsFuncs, cb: Weak<dyn TimeoutHandler>)
-		     -> Result<Timer, Error> {
+		     -> Result<Self, Error> {
 	let w;
 	unsafe {
 	    w = raw::gensio_os_funcs_alloc_waiter(o.raw());
@@ -796,7 +796,7 @@ extern "C" fn runner_handler(r: *const raw::gensio_runner,
 impl Runner {
     /// Allocate a new Runner object for the OsFuncs.
     pub fn new(o: &OsFuncs, handler: Weak<dyn RunnerHandler>)
-	       -> Result<Runner, Error> {
+	       -> Result<Self, Error> {
 	let d = Box::new(RunnerData { o: o.o.clone(), handler });
 	let d = Box::into_raw(d);
 	let r;

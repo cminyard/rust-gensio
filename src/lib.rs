@@ -472,6 +472,17 @@ struct GensioData {
     close_waiter: Waiter,
 }
 
+impl GensioData {
+    fn new(o: &OsFuncs, cb: Weak<dyn Event>,
+	   state: GensioState) -> Result<GensioData, Error> {
+        Ok(GensioData {
+            o: o.clone(), cb, state: Mutex::new(state),
+            close_waiter: Waiter::new(&o)?,
+        })
+    }
+}
+
+
 /// A gensio
 pub struct Gensio {
     g: *const raw::gensio,
@@ -578,21 +589,13 @@ impl Event for DummyEvHndl {
     }
 }
 
-fn new_gensio_data(o: &OsFuncs, cb: Weak<dyn Event>,
-	           state: GensioState) -> Result<GensioData, Error> {
-    Ok(GensioData {
-        o: o.clone(), cb, state: Mutex::new(state),
-        close_waiter: Waiter::new(&o)?,
-    })
- }
-
 fn new_gensio(o: &OsFuncs, g: *const raw::gensio,
 	      cb: Weak<dyn Event>, state: GensioState,
 	      d: Option<*mut GensioData>) -> Result<Gensio, Error>
 {
     let d = match d {
 	Some(d) => d,
-	None => Box::into_raw(Box::new(new_gensio_data(o, cb, state)?))
+	None => Box::into_raw(Box::new(GensioData::new(o, cb, state)?))
     };
     Ok(Gensio { g, d })
 }
@@ -904,7 +907,7 @@ impl Gensio {
 	    Err(_) => return Err(Error::Inval)
         };
         // Create a temporary data item so str_to_gensio can report parmlogs.
-        let gd = Box::new(new_gensio_data(&o.clone(), cb.clone(),
+        let gd = Box::new(GensioData::new(&o.clone(), cb.clone(),
                                           GensioState::Closed)?);
         let gd = Box::into_raw(gd);
 
