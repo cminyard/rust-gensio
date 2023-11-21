@@ -477,7 +477,7 @@ impl GensioData {
 	   state: GensioState) -> Result<GensioData, Error> {
         Ok(GensioData {
             o: o.clone(), cb, state: Mutex::new(state),
-            close_waiter: Waiter::new(&o)?,
+            close_waiter: Waiter::new(o)?,
         })
     }
 }
@@ -1026,7 +1026,7 @@ impl Gensio {
 	};
 	let a2: *mut *mut ffi::c_char = match a1 {
 	    None => std::ptr::null_mut(),
-	    Some(ref v) => v.as_ptr() as *mut *mut ffi::c_char
+	    Some(ref v) => v.as_ptr()
 	};
 
 	let err = unsafe {
@@ -1681,9 +1681,9 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	}
 	raw::GENSIO_ACC_EVENT_2FA_VERIFY => {
 	    let vd = data as *mut raw::gensio_acc_password_verify_data;
-	    let data = unsafe { (*vd).password } as *const u8;
 	    let data = unsafe {
-		std::slice::from_raw_parts(data, (*vd).password_len as usize)
+		std::slice::from_raw_parts((*vd).password,
+                                           (*vd).password_len as usize)
 	    };
 	    err = cb.verify_2fa(data);
 	}
@@ -1788,7 +1788,7 @@ impl Accepter {
         let dt = Box::new(AccepterData { o: o.clone(),
 				         cb,
 				         state: Mutex::new(GensioState::Closed),
-				         close_waiter: Waiter::new(&o)?, });
+				         close_waiter: Waiter::new(o)?, });
         let dt = Box::into_raw(dt);
         // Everything from here to the end of the function shouldn't
         // panic, so there is no need to worry about unwinding not

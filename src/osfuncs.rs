@@ -22,6 +22,10 @@ struct IOsFuncs {
     winsize_handler: Arc<GensioWinsizeHandlerData>,
 }
 
+// This is thread safe.
+unsafe impl Sync for IOsFuncs {}
+unsafe impl Send for IOsFuncs {}
+
 impl Drop for IOsFuncs {
     fn drop(&mut self) {
         let proc_data = self.proc_data.lock().unwrap();
@@ -98,6 +102,11 @@ struct GensioTermHandlerData {
     cb: Mutex<Option<Weak<dyn GensioTermHandler>>>
 }
 
+// FIXME - clippy complains about this type not implementing Send and
+// Sync, and says to wrap the inner part with a Mutex.  Huh?
+unsafe impl Send for GensioTermHandlerData {}
+unsafe impl Sync for GensioTermHandlerData {}
+
 fn i_term_handler(data: *mut ffi::c_void) {
     let d = data as *mut GensioTermHandlerData;
     let cb = match *unsafe {(*d).cb.lock().unwrap() } {
@@ -127,6 +136,11 @@ struct GensioHupHandlerData {
     cb: Mutex<Option<Weak<dyn GensioHupHandler>>>
 }
 
+// FIXME - clippy complains about this type not implementing Send and
+// Sync, and says to wrap the inner part with a Mutex.  Huh?
+unsafe impl Send for GensioHupHandlerData {}
+unsafe impl Sync for GensioHupHandlerData {}
+
 fn i_hup_handler(data: *mut ffi::c_void) {
     let d = data as *mut GensioHupHandlerData;
     let cb = match *unsafe {(*d).cb.lock().unwrap() } {
@@ -155,6 +169,11 @@ pub trait GensioWinsizeHandler {
 struct GensioWinsizeHandlerData {
     cb: Mutex<Option<Weak<dyn GensioWinsizeHandler>>>
 }
+
+// FIXME - clippy complains about this type not implementing Send and
+// Sync, and says to wrap the inner part with a Mutex.  Huh?
+unsafe impl Send for GensioWinsizeHandlerData {}
+unsafe impl Sync for GensioWinsizeHandlerData {}
 
 fn i_winsize_handler(x_chrs: i32, y_chrs: i32, x_bits: i32, y_bits: i32,
                      data: *mut ffi::c_void) {
