@@ -21,15 +21,6 @@ pub struct MDNS {
     closed: Mutex<bool>,
 }
 
-pub fn new(o: &OsFuncs) -> Result<MDNS, i32> {
-    let m: *const raw::gensio_mdns = std::ptr::null();
-    let rv = unsafe { raw::gensio_alloc_mdns(o.raw(), &m) };
-    if rv != 0 {
-	return Err(rv)
-    }
-    Ok(MDNS { o: o.clone(), m, closed: Mutex::new(false) })
-}
-
 struct MDNSDoneData {
     cb: Weak<dyn MDNSDone>,
 }
@@ -82,6 +73,15 @@ fn optstr_to_cstr(s: &Option<String>)
 }
 
 impl MDNS {
+    pub fn new(o: &OsFuncs) -> Result<Self, i32> {
+        let m: *const raw::gensio_mdns = std::ptr::null();
+        let rv = unsafe { raw::gensio_alloc_mdns(o.raw(), &m) };
+        if rv != 0 {
+	    return Err(rv)
+        }
+        Ok(MDNS { o: o.clone(), m, closed: Mutex::new(false) })
+    }
+
     pub fn shutdown(&self, cb: Weak<dyn MDNSDone>) -> Result<(), Error> {
 	let mut closed = self.closed.lock().unwrap();
 	if *closed {
@@ -100,83 +100,6 @@ impl MDNS {
 	    return Err(val_to_error(err));
 	}
 	Ok(())
-    }
-
-    pub fn new_service(&self, spec: &MDNSSpec,
-		       port: i32, txt: Option<&[&str]>,
-		       cb: Weak<dyn ServiceEvent>)
-		       -> Result<Service, Error> {
-	let closed = self.closed.lock().unwrap();
-	if *closed {
-	    return Err(crate::Error::NotReady);
-	}
-
-	let sd = Box::new(ServiceData { _o: self.o.clone(), cb });
-	let s: *const raw::gensio_mdns_service = std::ptr::null();
-	let (namep, _nameh) = optstr_to_cstr(&spec.name)?;
-	let (typep, _typeh) = optstr_to_cstr(&spec.mtype)?;
-	let (domainp, _domainh) = optstr_to_cstr(&spec.domain)?;
-	let (hostp, _hosth) = optstr_to_cstr(&spec.host)?;
-	let txt1 = match txt {
-	    None => None,
-	    Some(v) => Some(crate::strslice_to_auxvec(v)?)
-	};
-	let txt2: *mut *mut ffi::c_char = match txt1 {
-	    None => std::ptr::null_mut(),
-	    Some(ref v) => v.as_ptr()
-	};
-	let sd = Box::into_raw(sd);
-	// Nothing below here can panic, so it's safe to convert the
-	// box to raw.
-	let err = unsafe {
-	    raw::gensio_mdns_add_service2(self.m, spec.iface as ffi::c_int,
-					  spec.ipdomain as ffi::c_int,
-					  namep, typep, domainp, hostp,
-					  port as ffi::c_int,
-					  txt2 as *const *const ffi::c_char,
-					  service_event, sd as *mut ffi::c_void,
-					  &s)
-	};
-	if err != 0 {
-	    unsafe { drop(Box::from_raw(sd)) };
-	    return Err(val_to_error(err));
-	}
-	Ok(Service { s, _d: sd })
-    }
-
-    pub fn new_watch(&self, spec: &MDNSSpec, cb: Weak<dyn WatchEvent>)
-		     -> Result<Watch, Error> {
-	let closed = self.closed.lock().unwrap();
-	if *closed {
-	    return Err(crate::Error::NotReady);
-	}
-
-	let wd = Box::new(WatchData {
-	    _o: self.o.clone(),
-	    cb,
-	    state: Mutex::new(CloseState::Open),
-	    close_waiter: Waiter::new(&self.o)?,
-	});
-	let w: *const raw::gensio_mdns_watch = std::ptr::null();
-	let (namep, _nameh) = optstr_to_cstr(&spec.name)?;
-	let (typep, _typeh) = optstr_to_cstr(&spec.mtype)?;
-	let (domainp, _domainh) = optstr_to_cstr(&spec.domain)?;
-	let (hostp, _hosth) = optstr_to_cstr(&spec.host)?;
-	let wd = Box::into_raw(wd);
-	// Nothing below here can panic, so it's safe to convert the
-	// box to raw.
-	let err = unsafe {
-	    raw::gensio_mdns_add_watch(self.m, spec.iface as ffi::c_int,
-				       spec.ipdomain as ffi::c_int,
-				       namep, typep, domainp, hostp,
-				       watch_event, wd as *mut ffi::c_void,
-				       &w)
-	};
-	if err != 0 {
-	    unsafe { drop(Box::from_raw(wd)) };
-	    return Err(val_to_error(err));
-	}
-	Ok(Watch { w, d: wd })
     }
 }
 
@@ -246,6 +169,48 @@ extern "C" fn service_event(s: *const raw::gensio_mdns_service,
 }
 
 impl Service {
+    pub fn new(m: &MDNS, spec: &MDNSSpec,
+	       port: i32, txt: Option<&[&str]>,
+	       cb: Weak<dyn ServiceEvent>)
+	       -> Result<Service, Error> {
+	let closed = m.closed.lock().unwrap();
+	if *closed {
+	    return Err(crate::Error::NotReady);
+	}
+
+	let sd = Box::new(ServiceData { _o: m.o.clone(), cb });
+	let s: *const raw::gensio_mdns_service = std::ptr::null();
+	let (namep, _nameh) = optstr_to_cstr(&spec.name)?;
+	let (typep, _typeh) = optstr_to_cstr(&spec.mtype)?;
+	let (domainp, _domainh) = optstr_to_cstr(&spec.domain)?;
+	let (hostp, _hosth) = optstr_to_cstr(&spec.host)?;
+	let txt1 = match txt {
+	    None => None,
+	    Some(v) => Some(crate::strslice_to_auxvec(v)?)
+	};
+	let txt2: *mut *mut ffi::c_char = match txt1 {
+	    None => std::ptr::null_mut(),
+	    Some(ref v) => v.as_ptr()
+	};
+	let sd = Box::into_raw(sd);
+	// Nothing below here can panic, so it's safe to convert the
+	// box to raw.
+	let err = unsafe {
+	    raw::gensio_mdns_add_service2(m.m, spec.iface as ffi::c_int,
+					  spec.ipdomain as ffi::c_int,
+					  namep, typep, domainp, hostp,
+					  port as ffi::c_int,
+					  txt2 as *const *const ffi::c_char,
+					  service_event, sd as *mut ffi::c_void,
+					  &s)
+	};
+	if err != 0 {
+	    unsafe { drop(Box::from_raw(sd)) };
+	    return Err(val_to_error(err));
+	}
+	Ok(Service { s, _d: sd })
+    }
+
     pub fn shutdown(&self) -> Result<(), Error> {
 	let err = unsafe { raw::gensio_mdns_remove_service(self.s) };
 	match err {
@@ -403,6 +368,41 @@ extern "C" fn watch_event(w: *const raw::gensio_mdns_watch,
 }
 
 impl Watch {
+    pub fn new(m: &MDNS, spec: &MDNSSpec, cb: Weak<dyn WatchEvent>)
+		     -> Result<Watch, Error> {
+	let closed = m.closed.lock().unwrap();
+	if *closed {
+	    return Err(crate::Error::NotReady);
+	}
+
+	let wd = Box::new(WatchData {
+	    _o: m.o.clone(),
+	    cb,
+	    state: Mutex::new(CloseState::Open),
+	    close_waiter: Waiter::new(&m.o)?,
+	});
+	let w: *const raw::gensio_mdns_watch = std::ptr::null();
+	let (namep, _nameh) = optstr_to_cstr(&spec.name)?;
+	let (typep, _typeh) = optstr_to_cstr(&spec.mtype)?;
+	let (domainp, _domainh) = optstr_to_cstr(&spec.domain)?;
+	let (hostp, _hosth) = optstr_to_cstr(&spec.host)?;
+	let wd = Box::into_raw(wd);
+	// Nothing below here can panic, so it's safe to convert the
+	// box to raw.
+	let err = unsafe {
+	    raw::gensio_mdns_add_watch(m.m, spec.iface as ffi::c_int,
+				       spec.ipdomain as ffi::c_int,
+				       namep, typep, domainp, hostp,
+				       watch_event, wd as *mut ffi::c_void,
+				       &w)
+	};
+	if err != 0 {
+	    unsafe { drop(Box::from_raw(wd)) };
+	    return Err(val_to_error(err));
+	}
+	Ok(Watch { w, d: wd })
+    }
+
     fn i_shutdown(&self, cb: Option<Weak<dyn WatchDone>>)
 		  -> Result<(), Error> {
 	let d = Box::new(WatchDoneData { cb, d: self.d });
@@ -564,7 +564,7 @@ mod tests {
 	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
-	let m = new(&o).expect("Failed to allocate MDNS");
+	let m = MDNS::new(&o).expect("Failed to allocate MDNS");
 	let we = Arc::new(IWatchEvent {
 	    w: Waiter::new(&o).expect("Unable to allocate waiter"),
 	    d: Mutex::new(IWatchEventData {
@@ -575,7 +575,7 @@ mod tests {
 		txt: vec!["A=1".to_string(), "B=2".to_string()],
 	    }),
 	});
-	let w = m.new_watch(
+	let w = Watch::new(&m,
 	    &MDNSSpec {
 		iface: -1,
 		ipdomain: addr::GENSIO_NETTYPE_UNSPEC,
@@ -587,7 +587,7 @@ mod tests {
 	let se = Arc::new(IServiceEvent {
 	    w: Waiter::new(&o).expect("Unable to allocate waiter")
 	});
-	let s = m.new_service(
+	let s = Service::new(&m,
 	    &MDNSSpec {
 		iface: -1,
 		ipdomain: addr::GENSIO_NETTYPE_UNSPEC,
@@ -619,7 +619,7 @@ mod tests {
 	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
-	let m = new(&o).expect("Failed to allocate MDNS");
+	let m = MDNS::new(&o).expect("Failed to allocate MDNS");
 	let we = Arc::new(IWatchEvent {
 	    w: Waiter::new(&o).expect("Unable to allocate waiter"),
 	    d: Mutex::new(IWatchEventData {
@@ -630,7 +630,7 @@ mod tests {
 		txt: vec![],
 	    }),
 	});
-	let _w = m.new_watch(
+	let _w = Watch::new(&m,
 	    &MDNSSpec {
 		iface: -1,
 		ipdomain: addr::GENSIO_NETTYPE_UNSPEC,
@@ -642,7 +642,7 @@ mod tests {
 	let se = Arc::new(IServiceEvent {
 	    w: Waiter::new(&o).expect("Unable to allocate waiter")
 	});
-	let _s = m.new_service(
+	let _s = Service::new(&m,
 	    &MDNSSpec {
 		iface: -1,
 		ipdomain: addr::GENSIO_NETTYPE_UNSPEC,
