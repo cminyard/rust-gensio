@@ -128,7 +128,6 @@ pub type gensio_acc_done = extern "C" fn (acc: *const gensio_accepter,
 					  user_data: *mut ffi::c_void);
 
 #[link(name = "gensio")]
-#[link(name = "gensiohelpers")]
 extern "C" {
     #[allow(improper_ctypes)]
     pub fn str_to_gensio(s: *const ffi::c_char,
@@ -303,14 +302,6 @@ extern "C" {
     #[allow(improper_ctypes)]
     pub fn gensio_acc_free(a: *const gensio_accepter) -> ffi::c_int;
 
-    pub fn gensio_loginfo_to_str(vloginfo: *const ffi::c_void)
-				 -> *mut ffi::c_char;
-
-    pub fn gensio_parmlog_to_str(vloginfo: *const ffi::c_void)
-				 -> *mut ffi::c_char;
-
-    pub fn gensio_free_loginfo_str(str: *mut ffi::c_char);
-
     pub fn gensio_parity_to_str(val: ffi::c_uint) -> *const ffi::c_char;
 
     pub fn gensio_str_to_parity(sval: *const ffi::c_char) -> ffi::c_int;
@@ -324,6 +315,17 @@ extern "C" {
     pub fn gensio_str_to_onoff(sval: *const ffi::c_char) -> ffi::c_int;
 
     pub fn gensio_err_to_str(err: ffi::c_int) -> *const ffi::c_char;
+}
+
+#[link(name = "gensiohelpers")]
+extern "C" {
+    pub fn gensio_loginfo_to_str(vloginfo: *const ffi::c_void)
+				 -> *mut ffi::c_char;
+
+    pub fn gensio_parmlog_to_str(vloginfo: *const ffi::c_void)
+				 -> *mut ffi::c_char;
+
+    pub fn gensio_free_loginfo_str(str: *mut ffi::c_char);
 }
 
 #[cfg(test)]
@@ -372,8 +374,7 @@ mod tests {
 	unsafe {
 	    let d = user_data as *const GData;
 
-	    let err = gensio_os_funcs_wake((*d).o, (*d).w);
-	    assert_eq!(err, 0);
+	    gensio_os_funcs_wake((*d).o, (*d).w);
 	}
 	0
     }
@@ -385,8 +386,7 @@ mod tests {
 	unsafe {
 	    let d = open_data as *const GData;
 
-	    let err = gensio_os_funcs_wake((*d).o, (*d).w);
-	    assert_eq!(err, 0);
+	    gensio_os_funcs_wake((*d).o, (*d).w);
 	}
     }
 
@@ -395,8 +395,7 @@ mod tests {
 	unsafe {
 	    let d = close_data as *const GData;
 
-	    let err = gensio_os_funcs_wake((*d).o, (*d).w);
-	    assert_eq!(err, 0);
+	    gensio_os_funcs_wake((*d).o, (*d).w);
 	}
     }
 

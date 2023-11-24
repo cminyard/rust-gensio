@@ -556,6 +556,7 @@ pub fn strslice_to_auxvec(vi: &[&str]) -> Result<CAuxVec, Error> {
 	};
 	cauxvec.v.push(ffi::CString::into_raw(cs));
     }
+    cauxvec.v.push(std::ptr::null_mut());
     Ok(cauxvec)
 }
 
@@ -568,6 +569,9 @@ impl CAuxVec {
 impl Drop for CAuxVec {
     fn drop(&mut self) {
 	for i in &self.v {
+        if i.is_null() {
+            continue;
+        }
 	    let cs = unsafe { ffi::CString::from_raw(*i) };
 	    drop(cs);
 	}
@@ -1017,7 +1021,7 @@ impl Gensio {
     /// bytes written is returned.  On failure an error code is
     /// returned.
     pub fn write(&self, data: &[u8], auxdata: Option<&[&str]>)
-		 -> Result<u64, Error> {
+		 -> Result<usize, Error> {
 	let mut count: GensioDS = 0;
 	let a1 = match auxdata {
 	    None => None,
@@ -1035,7 +1039,7 @@ impl Gensio {
 			      a2 as *const *const ffi::c_char)
 	};
 	match err {
-	    0 => Ok(count),
+	    0 => Ok(count as usize),
 	    _ => Err(val_to_error(err))
 	}
     }
@@ -1044,7 +1048,7 @@ impl Gensio {
     /// bytes written is returned.  On failure an error code is
     /// returned.
     pub fn write_s(&self, data: &[u8], timeout: Option<&Duration>)
-		   -> Result<u64, Error> {
+		   -> Result<usize, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -1056,7 +1060,7 @@ impl Gensio {
 				data.len() as GensioDS, tptr)
 	};
 	match err {
-	    0 => Ok(count),
+	    0 => Ok(count as usize),
 	    _ => Err(val_to_error(err))
 	}
     }
@@ -1065,7 +1069,7 @@ impl Gensio {
     /// On success, the number of bytes written is returned.  On
     /// failure an error code is returned.
     pub fn write_s_intr(&self, data: &[u8], timeout: Option<&Duration>)
-			-> Result<u64, Error> {
+			-> Result<usize, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -1077,7 +1081,7 @@ impl Gensio {
 				     data.len() as GensioDS, tptr)
 	};
 	match err {
-	    0 => Ok(count),
+	    0 => Ok(count as usize),
 	    _ => Err(val_to_error(err))
 	}
     }
@@ -1086,7 +1090,7 @@ impl Gensio {
     /// bytes read is returned.  On failure an error code is
     /// returned.  The data vector is filled in with data.
     pub fn read_s(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
-		  -> Result<u64, Error> {
+		  -> Result<usize, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -1100,7 +1104,7 @@ impl Gensio {
 	match err {
 	    0 => {
 		unsafe { data.set_len(count as usize); }
-		Ok(count)
+		Ok(count as usize)
 	    }
 	    _ => Err(val_to_error(err))
 	}
@@ -1109,7 +1113,7 @@ impl Gensio {
     /// Like read_s, but if a signal comes in this will return an
     /// interrupted error.
     pub fn read_s_intr(&self, data: &mut Vec<u8>, timeout: Option<&Duration>)
-		  -> Result<u64, Error> {
+		  -> Result<usize, Error> {
 	let mut t = osfuncs::raw::gensio_time { secs: 0, nsecs: 0 };
 	let tptr: *const osfuncs::raw::gensio_time
 	    = duration_to_gensio_time(&mut t, timeout);
@@ -1123,7 +1127,7 @@ impl Gensio {
 	match err {
 	    0 => {
 		unsafe { data.set_len(count as usize); }
-		Ok(count)
+		Ok(count as usize)
 	    }
 	    _ => Err(val_to_error(err))
 	}
@@ -2111,7 +2115,7 @@ mod tests {
 	    assert_eq!(buf.len(), 7);
 	    let s = String::from_utf8_lossy(buf);
 	    assert_eq!(s, "teststr");
-	    self.w.wake().expect("Wake open done failed");
+	    self.w.wake();
 	    (Error::NoErr, buf.len())
 	}
     }
@@ -2122,13 +2126,13 @@ mod tests {
 	}
 
 	fn done(&self) {
-	    self.w.wake().expect("Wake open done failed");
+	    self.w.wake();
 	}
     }
 
     impl OpDone for EvStruct {
 	fn done(&self) {
-	    self.w.wake().expect("Wake close done failed");
+	    self.w.wake();
 	}
     }
 
@@ -2188,20 +2192,20 @@ mod tests {
 	    };
 	    assert_eq!(&s, chks);
 	    d.logstr = None;
-	    self.w.wake().expect("Wake failed");
+	    self.w.wake();
 	}
 
 	fn new_connection(&self, g: Gensio) -> Error {
 	    let mut d = self.d.lock().unwrap();
 	    d.ag = Some(g);
-	    self.w.wake().expect("Wake failed");
+	    self.w.wake();
 	    Error::NoErr
 	}
     }
 
     impl AccepterShutdownDone for AccEvent {
 	fn done(&self) {
-	    self.w.wake().expect("Wake close done failed");
+	    self.w.wake();
 	}
     }
 
@@ -2229,13 +2233,13 @@ mod tests {
 	    };
 	    assert_eq!(&s, chks);
 	    d.logstr = None;
-	    self.w.wake().expect("Wake failed");
+	    self.w.wake();
 	}
 
 	fn err(&self, err: Error) -> Error {
 	    let d = self.d.lock().unwrap();
 	    assert_eq!(d.experr, err);
-	    self.w.wake().expect("Wake failed");
+	    self.w.wake();
 	    Error::NoErr
 	}
 
@@ -2714,7 +2718,7 @@ mod tests {
 		}
 	    };
 	    *v = None;
-	    self.w.wake().expect("Wake control done failed");
+	    self.w.wake();
 	}
     }
 

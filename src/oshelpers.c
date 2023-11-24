@@ -113,7 +113,7 @@ send_term_self(void)
 int
 send_winch_self(void)
 {
-    return -2;
+    return 0;
 }
 
 #else

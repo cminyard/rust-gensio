@@ -57,7 +57,6 @@ pub type gensio_rust_log_func = extern "C" fn (log: *const ffi::c_char,
 					       data: *mut ffi::c_void);
 
 #[link(name = "gensioosh")]
-#[link(name = "gensiooshelpers")]
 extern "C" {
     // Note: This must be passed a static variable.  It is not copied,
     // the pointer is used.
@@ -189,11 +188,19 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_wake(o: *const gensio_os_funcs,
-				w: *const gensio_waiter) -> ffi::c_int;
+				w: *const gensio_waiter);
 
     #[allow(improper_ctypes)]
     pub fn gensio_os_funcs_free(o: *const gensio_os_funcs);
 
+    /// Allocate some gensio data.  For internal use only, subject to change.
+    #[allow(improper_ctypes)]
+    pub fn gensio_os_funcs_zalloc(o: *const gensio_os_funcs, len: gensiods)
+				  -> *mut ffi::c_void;
+}
+
+#[link(name = "gensiooshelpers")]
+extern "C" {
     /// Set the log handler function.  This is rust-specific, since
     /// rust can't take va_list and we need a helper function to
     /// generate the log string.
@@ -215,11 +222,6 @@ extern "C" {
     /// Release an allocated IOD.
     #[allow(improper_ctypes)]
     pub fn gensio_release_iod(o: *const gensio_os_funcs, iod: *const gensio_iod);
-
-    /// Allocate some gensio data.  For internal use only, subject to change.
-    #[allow(improper_ctypes)]
-    pub fn gensio_os_funcs_zalloc(o: *const gensio_os_funcs, len: gensiods)
-				  -> *mut ffi::c_void;
 }
 
 pub const GESNIO_IOD_INVALID: i32       = 0;

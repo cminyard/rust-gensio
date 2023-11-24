@@ -448,12 +448,8 @@ impl Waiter {
 
     /// Decrement the wakeup count on a wait() call.  When the count
     /// reaches 0, that function will return success.
-    pub fn wake(&self) -> Result<(), Error> {
-	let err = unsafe { raw::gensio_os_funcs_wake(self.o.o, self.w) };
-	match err {
-	    0 => Ok(()),
-	    _ => Err(val_to_error(err))
-	}
+    pub fn wake(&self) {
+	unsafe { raw::gensio_os_funcs_wake(self.o.o, self.w) };
     }
 
     /// Wait for a given number of wake calls to occur, or a timeout.
@@ -884,7 +880,7 @@ mod tests {
     }
     impl TimeoutHandler for HandleTimeout1 {
 	fn timeout(&self) {
-	    self.w.wake().expect("Wake failed");
+	    self.w.wake();
 	}
     }
 
@@ -938,7 +934,7 @@ mod tests {
             let v2 = TESTVAL3.lock().unwrap();
             assert_eq!(*v, *v2);
             *v = 10;
-	    self.w.wake().expect("Wake failed");
+	    self.w.wake();
 	}
     }
 
@@ -987,7 +983,7 @@ mod tests {
             let v2 = TESTVAL4.lock().unwrap();
             assert_eq!(*v, *v2);
             *v = 10;
-	    self.w.wake().expect("Wake failed");
+	    self.w.wake();
 	}
     }
 
@@ -1026,13 +1022,14 @@ mod tests {
 
     impl GensioTermHandler for TermHnd {
         fn term_sig(&self) {
-            self.w.wake().expect("Wake failed");
+            self.w.wake();
         }
     }
 
     // Note that all the signal handler test functions are required to be
     // serial because they use proc_setup().
 
+    #[link(name = "gensiooshelpers")]
     extern "C" {
         fn send_term_self() -> ffi::c_int;
         fn send_hup_self() -> ffi::c_int;
@@ -1050,7 +1047,12 @@ mod tests {
 	});
         o.register_term_handler(Arc::downgrade(&h) as _)
 	    .expect("Couldn't register term handler");
-        unsafe { send_term_self(); }
+        let err = unsafe { send_term_self() };
+	if err == -2 {
+	    // Not supported on platform.
+	    return;
+	}
+
         // There are other threads running in the process, if those
         // threads handle the signal, it won't necessarily wake up the
         // waiter.  So we loop twice to catch the signal setting the
@@ -1077,7 +1079,7 @@ mod tests {
 
     impl GensioHupHandler for HupHnd {
         fn hup_sig(&self) {
-            self.w.wake().expect("Wake failed");
+            self.w.wake();
         }
     }
 
@@ -1091,9 +1093,21 @@ mod tests {
 	let h = Arc::new(HupHnd {
 	    w: Waiter::new(&o).expect("Couldn't allocate Waiter"),
 	});
-        o.register_hup_handler(Arc::downgrade(&h) as _)
-	    .expect("Couldn't register hup handler");
-        unsafe { send_hup_self(); }
+	match o.register_hup_handler(Arc::downgrade(&h) as _) {
+	    Ok(_) => (),
+	    Err(e) => {
+	        if e == Error::NotSup {
+	            // Not supported, just quit.
+	            return;
+		}
+	        panic!("Couldn't register hup handler");
+	    }
+	}
+        let err = unsafe { send_hup_self() };
+	if err == -2 {
+	    // Not supported on platform.
+	    return;
+	}
 
         // See note in term_test on this loop.
         let mut count = 0;
@@ -1117,7 +1131,7 @@ mod tests {
 
     impl GensioWinsizeHandler for WinsizeHnd {
         fn winsize_sig(&self, _x_chrs: i32, _y_chrs: i32, _x_bits: i32, _y_bits: i32) {
-            self.w.wake().expect("Wake failed");
+            self.w.wake();
         }
     }
 
@@ -1169,7 +1183,7 @@ mod tests {
     }
     impl RunnerHandler for HandleRunner1 {
 	fn runner(&self) {
-	    self.w.wake().expect("Wake failed");
+	    self.w.wake();
 	}
     }
 
