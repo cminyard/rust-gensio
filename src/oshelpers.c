@@ -6,8 +6,6 @@
 
 #include <stdio.h>
 #include <assert.h>
-#include <signal.h>
-#include <unistd.h>
 #include <gensio/gensio_os_funcs_public.h>
 #include <gensio/gensio_os_funcs.h>
 #include <gensio/gensio_utils.h>
@@ -98,14 +96,47 @@ gensio_release_iod(struct gensio_os_funcs *o, struct gensio_iod *iod)
     o->release_iod(iod);
 }
 
+#ifdef _WIN32
+
 int
 send_hup_self(void)
 {
-    return kill(getpid(), SIGHUP);
+    return -2;
 }
 
 int
 send_term_self(void)
 {
-    return kill(getpid(), SIGTERM);
+    return -2;
 }
+
+int
+send_winch_self(void)
+{
+    return -2;
+}
+
+#else
+
+#include <pthread.h>
+#include <signal.h>
+#include <unistd.h>
+int
+send_hup_self(void)
+{
+    return pthread_kill(pthread_self(), SIGHUP);
+}
+
+int
+send_term_self(void)
+{
+    return pthread_kill(pthread_self(), SIGTERM);
+}
+
+int
+send_winch_self(void)
+{
+    return pthread_kill(pthread_self(), SIGWINCH);
+}
+
+#endif

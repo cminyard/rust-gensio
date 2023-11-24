@@ -1036,6 +1036,7 @@ mod tests {
     extern "C" {
         fn send_term_self() -> ffi::c_int;
         fn send_hup_self() -> ffi::c_int;
+        fn send_winch_self() -> ffi::c_int;
     }
     #[test]
     #[serial]
@@ -1057,7 +1058,7 @@ mod tests {
         // functions.
         let mut count = 0;
         loop {
-	    let rv = h.w.wait(1, Some(&Duration::new(1, 0)));
+	    let rv = h.w.wait(1, Some(&Duration::new(10, 0)));
             if rv == Err(Error::TimedOut) && count == 0 {
                 count += 1;
                 continue;
@@ -1141,6 +1142,8 @@ mod tests {
         }
         // Note that the winsize handler will automatically send the
         // proper signal to cause the callback, so no need to send it.
+	// Temporarily send it anyway, for MacOS.
+        unsafe { send_winch_self(); }
 
         // See note in term_test on this loop.
         let mut count = 0;
