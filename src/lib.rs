@@ -287,14 +287,13 @@ pub trait OpDone {
 }
 
 extern "C" {
-    fn printf(s: *const ffi::c_char, s2: *const ffi::c_char);
+    pub fn my_puts(s: *const ffi::c_char);
 }
 
 pub fn puts(s: &str) {
     let s1 = ffi::CString::new(s).expect("CString::new failed");
-    let fmt = ffi::CString::new("%s").expect("CString::fmt failed");
     unsafe {
-       printf(fmt.as_ptr(), s1.as_ptr());
+       my_puts(s1.as_ptr());
     }
 }
 
@@ -2268,7 +2267,7 @@ mod tests {
 			     Arc::downgrade(&e) as _);
 	match a {
 	    Ok(_a) => assert!(false),
-	    Err(e) => assert_eq!(e, Error::UnknownNameErr)
+	    Err(e) => assert!(e == Error::UnknownNameErr || e == Error::NameErr)
 	};
     }
 

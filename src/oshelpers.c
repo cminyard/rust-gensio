@@ -12,6 +12,12 @@
 #include <gensio/gensio_os_funcs.h>
 #include <gensio/gensio_utils.h>
 
+void
+my_puts(const char *s)
+{
+    fputs(s, stdout);
+}
+
 typedef void (*gensio_rust_log_func)(const char *log, void *data);
 
 struct gensio_rust_os_func_data {
