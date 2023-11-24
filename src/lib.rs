@@ -319,7 +319,7 @@ fn i_close_done(_io: *const raw::gensio, user_data: *mut ffi::c_void) {
     match *state {
 	GensioState::WaitClose => {
 	    // The Gensio is being dropped and waiting for us to complete.
-	    unsafe { _ = (*d.d).close_waiter.wake(); }
+	    unsafe { (*d.d).close_waiter.wake(); }
 	}
 	_ => *state = GensioState::Closed,
     }
@@ -1762,9 +1762,7 @@ fn i_acc_shutdown_done(_io: *const raw::gensio_accepter,
     match *state {
 	GensioState::WaitClose => {
 	    // The Gensio is being dropped and waiting for us to complete.
-	    unsafe {
-                _ = (*d.d).close_waiter.wake()
-	    }
+	    unsafe { (*d.d).close_waiter.wake() };
 	}
 	_ => *state = GensioState::Closed,
     }

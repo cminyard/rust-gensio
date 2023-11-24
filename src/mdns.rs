@@ -250,7 +250,7 @@ fn i_watch_done(_w: *const raw::gensio_mdns_watch,
 	match *state {
 	    CloseState::WaitClose => {
 		// The Gensio is being dropped and waiting for us to complete.
-		unsafe { _ = (*d.d).close_waiter.wake(); }
+		unsafe { (*d.d).close_waiter.wake(); }
 	    }
 	    _ => *state = CloseState::Closed,
 	}
