@@ -30,22 +30,22 @@ pub struct NetIfs {
     len: ffi::c_uint,
 }
 
-/// Allocate a new NetIfs structure and fill it in with the network
-/// interfaces.
-pub fn new(o: &OsFuncs) -> Result<NetIfs, Error> {
-    let ni: *const *const raw::gensio_net_if = std::ptr::null();
-    let mut len: ffi::c_uint = 0;
-    let rv = unsafe {
-	raw::gensio_os_get_net_ifs(o.raw(), &ni, &mut len)
-    };
-    match rv {
-	0 => (),
-	_ => return Err(val_to_error(rv))
-    }
-    Ok(NetIfs { o: o.clone(), ni, len })
-}
-
 impl NetIfs {
+    /// Allocate a new NetIfs structure and fill it in with the network
+    /// interfaces.
+    pub fn new(o: &OsFuncs) -> Result<Self, Error> {
+	let ni: *const *const raw::gensio_net_if = std::ptr::null();
+	let mut len: ffi::c_uint = 0;
+	let rv = unsafe {
+	    raw::gensio_os_get_net_ifs(o.raw(), &ni, &mut len)
+	};
+	match rv {
+	    0 => (),
+	    _ => return Err(val_to_error(rv))
+	}
+	Ok(NetIfs { o: o.clone(), ni, len })
+    }
+
     fn get_ni(&self, idx: usize) -> Result<*const raw::gensio_net_if, Error> {
 	if idx >= self.len as usize {
 	    return Err(Error::OutOfRange);
@@ -155,7 +155,7 @@ mod tests {
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 
-	let nis = new(&o).expect("Unable to get network interfaces");
+	let nis = NetIfs::new(&o).expect("Unable to get network interfaces");
 	for i in 0..nis.len() {
 	    crate::puts(&nis.get_name(i).expect("get name failed"));
 	    crate::puts(":");
