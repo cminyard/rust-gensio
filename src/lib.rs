@@ -3080,6 +3080,7 @@ mod tests {
 	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
+	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
         let r = CryptoReflector::new(&o, ",enable-2fa").expect("Allocate reflector failed");
 
 	let e = Arc::new(CryptoEvInst{
@@ -3095,16 +3096,21 @@ mod tests {
 	    let mut setg = e.g.lock().unwrap();
 	    *setg = Some(g)
 	}
+	// Don't use open_s(), it's a bad idea to hold a mutex while
+	// waiting.
+	let oev = Arc::new(EvStruct { w: w });
+	let oevw = Arc::downgrade(&oev);
 	{
 	    let g1 = e.g.lock().unwrap();
 	    match &*g1 {
 		Some(g) => {
-		    g.open_s().expect("Open failed");
+		    g.open(oevw.clone()).expect("Open failed");
 		    g.read_enable(true);
 		}
 		None => panic!("Not possible")
 	    }
 	}
+	oev.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
     }
 
     #[test]
@@ -3130,7 +3136,9 @@ mod tests {
 	    let mut setg = e.g.lock().unwrap();
 	    *setg = Some(g)
 	}
-	let oev = Arc::new(EvStruct { w: w});
+	// Don't use open_s(), it's a bad idea to hold a mutex while
+	// waiting.
+	let oev = Arc::new(EvStruct { w: w });
 	let oevw = Arc::downgrade(&oev);
 	{
 	    let g1 = e.g.lock().unwrap();
