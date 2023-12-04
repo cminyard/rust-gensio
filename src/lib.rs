@@ -286,17 +286,6 @@ pub trait OpDone {
     fn done(&self);
 }
 
-extern "C" {
-    pub fn my_puts(s: *const ffi::c_char);
-}
-
-pub fn puts(s: &str) {
-    let s1 = ffi::CString::new(s).expect("CString::new failed");
-    unsafe {
-       my_puts(s1.as_ptr());
-    }
-}
-
 struct CloseDoneData {
     cb: Option<Weak<dyn OpDone>>,
     d: *mut GensioData,

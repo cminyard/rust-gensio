@@ -157,25 +157,23 @@ mod tests {
 
 	let nis = NetIfs::new(&o).expect("Unable to get network interfaces");
 	for i in 0..nis.len() {
-	    crate::puts(&nis.get_name(i).expect("get name failed"));
-	    crate::puts(":");
+	    let name = nis.get_name(i).expect("get name failed");
+	    let mut opts = String::new();
 	    if nis.is_up(i).expect("is_up failed") {
-		crate::puts(" up");
+		opts.push_str(" up");
 	    }
 	    if nis.is_loopback(i).expect("is_loopback failed") {
-		crate::puts(" loopback");
+		opts.push_str(" loopback");
 	    }
 	    if nis.is_multicast(i).expect("is_multicast failed") {
-		crate::puts(" multicast");
+		opts.push_str(" multicast");
 	    }
-	    crate::puts("\n");
+	    println!("{name}: {opts}");
 	    for j in 0..nis.get_num_addrs(i).expect("num_addrs") {
-		crate::puts("  ");
-		crate::puts(&nis.get_addr_str(i, j).expect("get addr failed"));
-		crate::puts("/");
-		crate::puts(&nis.get_addr_netbits(i, j)
-			    .expect("get addr failed").to_string());
-		crate::puts("\n");
+		println!("  {}/{}",
+			 nis.get_addr_str(i, j).expect("get addr failed"),
+			 nis.get_addr_netbits(i, j)
+			 .expect("get addr failed").to_string());
 	    }
 	}
     }
