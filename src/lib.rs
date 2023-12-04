@@ -2461,7 +2461,9 @@ mod tests {
 
     impl Event for TelnetReflectorInst {
         fn err(&self, err: Error) -> Error {
-	    error!("{}", &format!("Error: {err}\n").to_string());
+	    if err != Error::RemClose {
+		error!("{}", &format!("Error: {err}\n").to_string());
+	    }
 	    self.shutdown();
             Error::NoErr
         }
@@ -2834,7 +2836,9 @@ mod tests {
 
     impl Event for CryptoReflectorInst {
         fn err(&self, err: Error) -> Error {
-	    error!("{}", &format!("Error: {err}\n").to_string());
+	    if err != Error::RemClose {
+		error!("{}", &format!("Error: {err}\n").to_string());
+	    }
 	    self.shutdown();
             Error::NoErr
         }
@@ -3101,14 +3105,10 @@ mod tests {
 	let oev = Arc::new(EvStruct { w: w });
 	let oevw = Arc::downgrade(&oev);
 	{
-	    let g1 = e.g.lock().unwrap();
-	    match &*g1 {
-		Some(g) => {
-		    g.open(oevw.clone()).expect("Open failed");
-		    g.read_enable(true);
-		}
+	    match &*(e.g.lock().unwrap()) {
+		Some(g) => g.open(oevw.clone()).expect("Open failed"),
 		None => panic!("Not possible")
-	    }
+	    };
 	}
 	oev.w.wait(1, Some(&Duration::new(1, 0))).expect("Wait failed");
     }
@@ -3141,11 +3141,8 @@ mod tests {
 	let oev = Arc::new(EvStruct { w: w });
 	let oevw = Arc::downgrade(&oev);
 	{
-	    let g1 = e.g.lock().unwrap();
-	    match &*g1 {
-		Some(g) => {
-		    g.open(oevw.clone()).expect("Open failed");
-		}
+	    match &*(e.g.lock().unwrap()) {
+		Some(g) => g.open(oevw.clone()).expect("Open failed"),
 		None => panic!("Not possible")
 	    }
 	}
