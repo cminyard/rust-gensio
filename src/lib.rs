@@ -694,8 +694,12 @@ fn i_evhndl(_io: *const raw::gensio, user_data: *const ffi::c_void,
 		} else {
 		    let sl = unsafe { std::slice::from_raw_parts(auxdata,
 								 10000) };
-		    let cs = unsafe { ffi::CStr::from_ptr(sl[0]) };
-		    Some(cs.to_str().expect("Invalid string"))
+		    if sl[0].is_null() {
+			None
+		    } else {
+			let cs = unsafe { ffi::CStr::from_ptr(sl[0]) };
+			Some(cs.to_str().expect("Invalid string"))
+		    }
 		}
 	    };
 	    err = cb.postcert_verify(val_to_error(ierr), errstr);
@@ -1241,7 +1245,7 @@ impl Gensio {
 	}
     }
 
-    /// Like acontrol, but taks a string and converts it to nil
+    /// Like acontrol, but takes a string and converts it to nil
     /// terminated bytes for the caller.
     pub fn acontrol_str(&self, depth: i32, dir: ControlDir, option: AControlOp,
 			data: &str, done: Option<Weak<dyn ControlDone>>,
@@ -1476,6 +1480,9 @@ impl Gensio {
 
 impl Drop for Gensio {
     fn drop(&mut self) {
+	if self.d.is_null() {
+	    return;
+	}
 	unsafe {
 	    let mut do_wait = false;
 	    {
@@ -1517,37 +1524,39 @@ pub trait AccepterEvent {
     fn new_connection(&self, g: Gensio) -> Error;
 
     /// See gensio_event.3, GENSIO_EVENT_AUTH_BEGIN.
-    fn auth_begin(&self) -> Error {
+    fn auth_begin(&self, _tmpg: &Gensio) -> Error {
 	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_PRECERT_VERIFY.
-    fn precert_verify(&self) -> Error {
+    fn precert_verify(&self, _tmpg: &Gensio) -> Error {
 	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_POSTCERT_VERIFY.
-    fn postcert_verify(&self, _err: Error, _errstr: Option<&str>) -> Error {
+    fn postcert_verify(&self, _tmpg: &Gensio,
+		       _err: Error, _errstr: Option<&str>) -> Error {
 	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_PASSWORD_VERIFY.
-    fn password_verify(&self, _passwd: &str) -> Error {
+    fn password_verify(&self, _tmpg: &Gensio, _passwd: &str) -> Error {
 	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_PASSWORD_REQUEST_PASSWORD.
-    fn request_password(&self, _maxsize: u64) -> (Error, Option<String>) {
+    fn request_password(&self, _tmpg: &Gensio, _maxsize: u64)
+			-> (Error, Option<String>) {
 	(Error::NotSup, None)
     }
 
     /// See gensio_event.3, GENSIO_EVENT_VERIFY_2FA.
-    fn verify_2fa(&self, _data: &[u8]) -> Error {
+    fn verify_2fa(&self, _tmpg: &Gensio, _data: &[u8]) -> Error {
 	Error::NotSup
     }
 
     /// See gensio_event.3, GENSIO_EVENT_REQUEST_2FA.
-    fn request_2fa(&self) -> (Error, Option<&[u8]>) {
+    fn request_2fa(&self, _tmpg: &Gensio) -> (Error, Option<&[u8]>) {
 	(Error::NotSup, None)
     }
 }
@@ -1630,12 +1639,18 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    err = cb.new_connection(new_g);
 	}
 	raw::GENSIO_ACC_EVENT_AUTH_BEGIN => {
-	    err = cb.auth_begin();
+	    let tmp_g = Gensio { g: data as *const raw::gensio,
+				 d: std::ptr::null_mut() };
+	    err = cb.auth_begin(&tmp_g);
 	}
 	raw::GENSIO_ACC_EVENT_PRECERT_VERIFY => {
-	    err = cb.precert_verify();
+	    let tmp_g = Gensio { g: data as *const raw::gensio,
+				 d: std::ptr::null_mut() };
+	    err = cb.precert_verify(&tmp_g);
 	}
 	raw::GENSIO_ACC_EVENT_POSTCERT_VERIFY => {
+	    let tmp_g = Gensio { g: data as *const raw::gensio,
+				 d: std::ptr::null_mut() };
 	    let vd = data as *const raw::gensio_acc_postcert_verify_data;
 	    let errstr = {
 		if unsafe {(*vd).errstr }.is_null() {
@@ -1645,22 +1660,27 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 		    Some(cs.to_str().expect("Invalid string"))
 		}
 	    };
-	    err = cb.postcert_verify(unsafe { val_to_error((*vd).err) },
+	    err = cb.postcert_verify(&tmp_g,
+				     unsafe { val_to_error((*vd).err) },
 				     errstr);
 	}
 	raw::GENSIO_ACC_EVENT_PASSWORD_VERIFY => {
+	    let tmp_g = Gensio { g: data as *const raw::gensio,
+				 d: std::ptr::null_mut() };
 	    let vd = data as *const raw::gensio_acc_password_verify_data;
 	    let cs = unsafe {
 		ffi::CStr::from_ptr((*vd).password as *const ffi::c_char)
 	    };
 	    let s = cs.to_str().expect("Invalid string");
-	    err = cb.password_verify(s);
+	    err = cb.password_verify(&tmp_g, s);
 	}
 	raw::GENSIO_ACC_EVENT_REQUEST_PASSWORD => {
+	    let tmp_g = Gensio { g: data as *const raw::gensio,
+				 d: std::ptr::null_mut() };
 	    let vd = data as *mut raw::gensio_acc_password_verify_data;
 	    let s;
 	    let maxlen = unsafe { (*vd).password_len } as usize;
-	    (err, s) = cb.request_password(maxlen as u64);
+	    (err, s) = cb.request_password(&tmp_g, maxlen as u64);
 	    if err == Error::NoErr {
 		match s {
 		    None => return err as ffi::c_int,
@@ -1685,17 +1705,21 @@ fn i_acc_evhndl(_acc: *const raw::gensio_accepter,
 	    }
 	}
 	raw::GENSIO_ACC_EVENT_2FA_VERIFY => {
+	    let tmp_g = Gensio { g: data as *const raw::gensio,
+				 d: std::ptr::null_mut() };
 	    let vd = data as *mut raw::gensio_acc_password_verify_data;
 	    let data = unsafe {
 		std::slice::from_raw_parts((*vd).password as *const u8,
                                            (*vd).password_len as usize)
 	    };
-	    err = cb.verify_2fa(data);
+	    err = cb.verify_2fa(&tmp_g, data);
 	}
 	raw::GENSIO_ACC_EVENT_REQUEST_2FA => {
+	    let tmp_g = Gensio { g: data as *const raw::gensio,
+				 d: std::ptr::null_mut() };
 	    let vd = data as *mut raw::gensio_acc_password_verify_data;
 	    let src;
-	    (err, src) = cb.request_2fa();
+	    (err, src) = cb.request_2fa(&tmp_g);
 	    if err != Error::NoErr {
 		return err as ffi::c_int;
 	    }
@@ -2632,6 +2656,23 @@ mod tests {
 	list: Arc<TelnetReflectorInstList>,
     }
 
+    impl TelnetReflector {
+	fn new(o: &osfuncs::OsFuncs)
+	       -> Result<Arc<Self>, Error> {
+	    let h = Arc::new(InitialTelnetReflectorEv{});
+            let a = Accepter::new("telnet(rfc2217),tcp,localhost,0", o,
+				  Arc::downgrade(&h) as _)?;
+            a.startup()?;
+	    let port = a.control_str(CONTROL_DEPTH_FIRST, ControlDir::Get,
+				     AccControlOp::LPort, "")?;
+	    let list = TelnetReflectorInstList { list: Mutex::new(Vec::new()) };
+	    let refl = Arc::new(TelnetReflector { a: Arc::new(a), port: port,
+						  list: Arc::new(list) });
+	    refl.a.set_handler(Arc::downgrade(&refl) as _);
+	    Ok(refl)
+	}
+    }
+
     impl AccepterEvent for TelnetReflector {
 	// No need for parmlog, InitialTelnetReflectorEv handled that.
 
@@ -2663,21 +2704,6 @@ mod tests {
         fn new_connection(&self, _g: Gensio) -> Error {
             Error::NotSup
         }
-    }
-
-    fn new_telnet_reflector(o: &osfuncs::OsFuncs)
-			    -> Result<Arc<TelnetReflector>, Error> {
-	let h = Arc::new(InitialTelnetReflectorEv{});
-        let a = Accepter::new("telnet(rfc2217),tcp,localhost,0", o,
-			     Arc::downgrade(&h) as _)?;
-        a.startup()?;
-	let port = a.control_str(CONTROL_DEPTH_FIRST, ControlDir::Get,
-				 AccControlOp::LPort, "")?;
-	let list = TelnetReflectorInstList {  list: Mutex::new(Vec::new()) };
-	let refl = Arc::new(TelnetReflector { a: Arc::new(a), port: port,
-					      list: Arc::new(list) });
-	refl.a.set_handler(Arc::downgrade(&refl) as _);
-	Ok(refl)
     }
 
     struct SerialEvInst {
@@ -2751,7 +2777,7 @@ mod tests {
 	    .expect("Couldn't allocate os funcs");
 	o.thread_setup().expect("Couldn't setup thread");
 	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
-        let r = new_telnet_reflector(&o).expect("Allocate reflector failed");
+        let r = TelnetReflector::new(&o).expect("Allocate reflector failed");
 
 	let e = Arc::new(SerialEvInst{
 	    w,
@@ -2785,5 +2811,318 @@ mod tests {
 		      AControlOp::SerSignature);
 
 	g.close_s().expect("Close failed");
+    }
+
+    struct CryptoReflectorInstList {
+	list: Mutex<Vec<Arc<CryptoReflectorInst>>>,
+    }
+
+    struct CryptoReflectorInstData {
+    }
+
+    struct CryptoReflectorInst {
+        g: Gensio,
+	list: Arc<CryptoReflectorInstList>,
+        d: Mutex<CryptoReflectorInstData>,
+    }
+
+    impl CryptoReflectorInst {
+	fn shutdown(&self) {
+	    let mut list = self.list.list.lock().unwrap();
+	    // Removing ourself from the list will drop the reference.
+	    list.retain(|x| std::ptr::eq(x.as_ref(), self));
+	}
+    }
+
+    impl Event for CryptoReflectorInst {
+        fn err(&self, err: Error) -> Error {
+	    error!("{}", &format!("Error: {err}\n").to_string());
+	    self.shutdown();
+            Error::NoErr
+        }
+
+        fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
+                -> (Error, usize) {
+	    match self.g.write(buf, None) {
+		Ok(len) => {
+		    if (len as usize) < buf.len() {
+			self.g.read_enable(false);
+			self.g.write_enable(true);
+		    }
+		    (Error::NoErr, (len as u64).try_into().unwrap())
+		}
+		Err(err) => {
+		    self.shutdown();
+		    (err, 0)
+		}
+	    }
+        }
+
+        fn write_ready(&self) -> Error {
+            self.g.read_enable(true);
+            self.g.write_enable(false);
+            Error::NoErr
+        }
+
+	fn auth_begin(&self) -> Error {
+	    puts("****auth_begin1\n");
+	    let name = self.g.control_str(CONTROL_DEPTH_FIRST, ControlDir::Get,
+					  ControlOp::Username, "");
+	    let name = match name {
+		Ok(s) => s,
+		Err(e) => return e
+	    };
+	    puts(&format!("****auth_begin: {}\n", name).to_string());
+	    Error::NotSup
+	}
+
+	fn precert_verify(&self) -> Error {
+	    puts("****precert_verify\n");
+	    Error::NotSup
+	}
+
+	fn postcert_verify(&self, _err: Error, _errstr: Option<&str>) -> Error {
+	    puts("****postcert_verify\n");
+	    Error::NotSup
+	}
+
+	fn password_verify(&self, _passwd: &str) -> Error {
+	    puts("****password_verify\n");
+	    Error::NotSup
+	}
+
+	fn request_password(&self, _maxsize: usize) -> (Error, Option<String>) {
+	    puts("****request_password\n");
+	    (Error::NotSup, None)
+	}
+
+	fn verify_2fa(&self, _data: &[u8]) -> Error {
+	    puts("****verify_2fa\n");
+	    Error::NotSup
+	}
+
+	fn request_2fa(&self) -> (Error, Option<&[u8]>) {
+	    puts("****request_2fa\n");
+	    (Error::NotSup, None)
+	}
+    }
+
+    struct CryptoReflector {
+        a: Arc<Accepter>,
+        port: String,
+	list: Arc<CryptoReflectorInstList>,
+    }
+
+    impl CryptoReflector {
+	fn new(o: &osfuncs::OsFuncs) -> Result<Arc<Self>, Error> {
+	    let h = Arc::new(InitialCryptoReflectorEv{});
+            let a = Accepter::new(
+		"certauth(enable-password,enable-2fa),ssl(key=ca/key.pem,cert=ca/cert.pem),tcp,localhost,0",
+		o, Arc::downgrade(&h) as _)?;
+            a.startup()?;
+	    let port = a.control_str(CONTROL_DEPTH_FIRST, ControlDir::Get,
+				     AccControlOp::LPort, "")?;
+	    let list = CryptoReflectorInstList { list: Mutex::new(Vec::new()) };
+	    let refl = Arc::new(CryptoReflector { a: Arc::new(a), port: port,
+						  list: Arc::new(list) });
+	    refl.a.set_handler(Arc::downgrade(&refl) as _);
+	    Ok(refl)
+	}
+    }
+
+    impl AccepterEvent for CryptoReflector {
+	// No need for parmlog, InitialCryptoReflectorEv handled that.
+
+        fn new_connection(&self, g: Gensio) -> Error {
+	    let mut list = self.list.list.lock().unwrap();
+
+	    let d = CryptoReflectorInstData { };
+	    let inst = Arc::new(CryptoReflectorInst { g: g,
+						      list: self.list.clone(),
+						      d: Mutex::new(d) });
+	    inst.g.set_handler(Arc::downgrade(&inst) as _);
+	    inst.g.read_enable(true);
+	    list.push(inst);
+	    Error::NoErr
+        }
+
+	fn auth_begin(&self, tmpg: &Gensio) -> Error {
+	    let name = tmpg.control_str(CONTROL_DEPTH_FIRST, ControlDir::Get,
+					ControlOp::Username, "");
+	    let name = match name {
+		Ok(s) => s,
+		Err(e) => return e
+	    };
+	    puts(&format!("****A auth_begin: {}\n", name).to_string());
+	    match name.eq("asdf") {
+		true => Error::NotSup,
+		false => Error::Inval
+	    }
+	}
+
+	fn precert_verify(&self, _tmpg: &Gensio) -> Error {
+	    puts("****A precert_verify\n");
+	    Error::NotSup
+	}
+
+	fn postcert_verify(&self, _tmpg: &Gensio,
+			   _err: Error, _errstr: Option<&str>) -> Error {
+	    puts("****A postcert_verify Verify\n");
+	    Error::NotSup
+	}
+
+	fn password_verify(&self, _tmpg: &Gensio, passwd: &str) -> Error {
+	    puts(&format!("****A password_verify: {passwd}\n").to_string());
+	    match passwd.eq("mypassword") {
+		true => Error::NoErr,
+		false => Error::KeyInvalid
+	    }
+	}
+
+	fn request_password(&self, _tmpg: &Gensio, _maxsize: u64)
+			    -> (Error, Option<String>) {
+	    puts("****A request_password\n");
+	    (Error::NotSup, None)
+	}
+
+	fn verify_2fa(&self, _tmpg: &Gensio, data: &[u8]) -> Error {
+	    puts("****A verify_2fa\n");
+	    let mut currv :u8 = 1;
+	    for i in data {
+		if currv != *i {
+		    return Error::KeyInvalid;
+		}
+		currv += 1;
+	    }
+	    return Error::NoErr;
+	}
+
+	fn request_2fa(&self, _tmpg: &Gensio) -> (Error, Option<&[u8]>) {
+	    puts("****A request_2fa\n");
+	    (Error::NotSup, None)
+	}
+    }
+
+    // Used as the initial handler when creating a new accepter.  Will be
+    // replaced after the accepter is up.
+    struct InitialCryptoReflectorEv {
+    }
+
+    impl AccepterEvent for InitialCryptoReflectorEv {
+        fn parmlog(&self, s: String) {
+            error!("{}", &format!("Unexpected parmlog: {s}\n").to_string());
+        }
+
+	// Refuse connections until we are ready.
+        fn new_connection(&self, _g: Gensio) -> Error {
+            Error::NotSup
+        }
+    }
+
+    struct CryptoEvInst {
+	w: Waiter,
+	expect_val: Mutex<Option<String>>,
+	g: Mutex<Option<Gensio>>,
+    }
+
+    impl Event for CryptoEvInst {
+	fn parmlog(&self, s: String) {
+	    panic!("Unexpected parm log: {}", s);
+	}
+
+	fn err(&self, _err: Error) -> Error {
+	    panic!("Unexpected err");
+	}
+
+	fn read(&self, buf: &[u8], _auxdata: Option<&[&str]>)
+		-> (Error, usize) {
+	    (Error::NoErr, buf.len())
+	}
+
+	fn auth_begin(&self) -> Error {
+	    let g = self.g.lock().unwrap();
+	    let name = match &*g {
+		Some(g) => g.control_str(CONTROL_DEPTH_FIRST, ControlDir::Get,
+					 ControlOp::Username, ""),
+		None => return Error::Inval
+	    };
+	    let name = match name {
+		Ok(s) => s,
+		Err(e) => return e
+	    };
+	    puts(&format!("****X auth_begin: {}\n", name).to_string());
+	    Error::NotSup
+	}
+
+	fn precert_verify(&self) -> Error {
+	    puts("****X precert_verify\n");
+	    Error::NotSup
+	}
+
+	fn postcert_verify(&self, err: Error, errstr: Option<&str>) -> Error {
+	    let s = match errstr {
+		Some(s) => s,
+		None => ""
+	    };
+	    puts(&format!("****X postcert_verify: {err}: {s}\n").to_string());
+	    Error::NotSup
+	}
+
+	fn password_verify(&self, _passwd: &str) -> Error {
+	    puts("****X password_verify\n");
+	    Error::NotSup
+	}
+
+	fn request_password(&self, _maxsize: usize) -> (Error, Option<String>) {
+	    puts("****X request_password\n");
+	    (Error::NoErr, Some("mypassword".to_string()))
+	}
+
+	fn verify_2fa(&self, _data: &[u8]) -> Error {
+	    puts("****X verify_2fa\n");
+	    Error::NotSup
+	}
+
+	fn request_2fa(&self) -> (Error, Option<&[u8]>) {
+	    puts("****X request_2fa\n");
+	    (Error::NoErr, Some(&[1, 2, 3, 4]))
+	}
+    }
+
+    #[test]
+    fn crypto_forward() {
+	init_logger();
+	let logh = Arc::new(LogHandler);
+	let o = OsFuncs::new(Arc::downgrade(&logh) as _)
+	    .expect("Couldn't allocate os funcs");
+	o.thread_setup().expect("Couldn't setup thread");
+	let w = Waiter::new(&o).expect("Couldn't allocate waiter");
+        let r = CryptoReflector::new(&o).expect("Allocate reflector failed");
+
+	let e = Arc::new(CryptoEvInst{
+	    w,
+	    expect_val: Mutex::new(None),
+	    g: Mutex::new(None),
+	});
+	let fs = format!("{},{},{}",
+			 "certauth(username=asdf,enable-password)",
+			 "ssl(ca=ca/CA.pem),tcp,localhost",
+			 r.port);
+	let g = Gensio::new(&fs, &o, Arc::downgrade(&e) as _)
+	    .expect("Gensio allocation failed");
+	{
+	    let mut setg = e.g.lock().unwrap();
+	    *setg = Some(g)
+	}
+	{
+	    let g1 = e.g.lock().unwrap();
+	    match &*g1 {
+		Some(g) => {
+		    g.open_s().expect("Open failed");
+		    g.read_enable(true);
+		}
+		None => panic!("Not possible")
+	    }
+	}
     }
 }
