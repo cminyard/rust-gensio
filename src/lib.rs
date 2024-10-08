@@ -2284,7 +2284,7 @@ mod tests {
 			     Arc::downgrade(&e) as _);
 	match a {
 	    Ok(_a) => assert!(false),
-	    Err(e) => assert!(e == Error::UnknownNameErr || e == Error::NameErr)
+	    Err(e) => assert!(e == Error::Inval)
 	};
     }
 
